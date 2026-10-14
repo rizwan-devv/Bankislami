@@ -1,9 +1,12 @@
 package com.corporate.agent.service;
 
+import com.corporate.agent.config.JwtService;
 import com.corporate.agent.dfs.DfsProxyClient;
+import com.corporate.agent.domain.AgentAccount;
 import com.corporate.agent.web.dto.ApiEnvelope;
 import com.corporate.agent.web.dto.ApiResponse;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -21,9 +24,13 @@ import java.util.UUID;
 public class TransactionGatewayService {
 
     private final DfsProxyClient dfs;
+    private final AgentStore store;
+    private final JwtService jwt;
 
-    public TransactionGatewayService(DfsProxyClient dfs) {
+    public TransactionGatewayService(DfsProxyClient dfs, AgentStore store, JwtService jwt) {
         this.dfs = dfs;
+        this.store = store;
+        this.jwt = jwt;
     }
 
     public Map<String, Object> getAllBanks(String authorization) {
@@ -59,7 +66,8 @@ public class TransactionGatewayService {
     public Map<String, Object> ibftTitleFetch(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
             if (dfs.isPortalMode()) {
-                return dfs.postCorporate("/v1/corporate/ibft/titleFetch", body);
+                return dfs.postCorporate("/v1/corporate/ibft/titleFetch",
+                        enrichIbftEnvelope(authorization, body, false));
             }
             return dfs.postTxn("/transactions/v1/ibft/titleFetch", body, authorization);
         }
@@ -81,7 +89,8 @@ public class TransactionGatewayService {
     public Map<String, Object> ibftAdvice(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
             if (dfs.isPortalMode()) {
-                return dfs.postCorporate("/v1/corporate/ibft/advice", body);
+                return dfs.postCorporate("/v1/corporate/ibft/advice",
+                        enrichIbftEnvelope(authorization, body, true));
             }
             return dfs.postTxn("/transactions/v1/ibft/advice", body, authorization);
         }
@@ -203,6 +212,98 @@ public class TransactionGatewayService {
             return dfs.postTxn("/transactions/v1/internalcashout", body, authorization);
         }
         return stubCashResult();
+    }
+
+    /**
+     * Mirror Corporate portal IBFT: inject fromAccountNo / fromAccountNid from logged-in agent,
+     * normalize beneficiary aliases, default purpose on advice.
+     */
+    private ApiEnvelope enrichIbftEnvelope(String authorization, ApiEnvelope body, boolean forAdvice) {
+        AgentAccount agent = requireAgent(authorization, body);
+        ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
+
+        putIfBlank(payload, "fromAccountNo", agent.getMobile());
+        String nid = digitsOnly(agent.getNidNo());
+        if (nid != null && nid.length() >= 13) {
+            putIfBlank(payload, "fromAccountNid", nid.length() > 13 ? nid.substring(0, 13) : nid);
+        }
+
+        copyFirstAlias(payload, "beneficiaryAccountNo",
+                "accountNo", "toAccountNo", "iban", "beneficiaryIban");
+        copyFirstAlias(payload, "beneficiaryBankImd",
+                "bankImd", "imd", "beneficiaryBankCode", "bankCode");
+
+        if (forAdvice) {
+            String purpose = firstNonBlank(
+                    text(payload, "purposeOfPayment"),
+                    text(payload, "purpose"),
+                    text(payload, "purposeOfTxn"),
+                    "Transfer");
+            payload.put("purposeOfPayment", purpose);
+        }
+
+        ApiEnvelope out = new ApiEnvelope();
+        if (body != null) {
+            out.setChannel(body.getChannel());
+            out.setSegment(body.getSegment());
+            out.setImieNo(body.getImieNo());
+            out.setLatitude(body.getLatitude());
+            out.setLongitude(body.getLongitude());
+            out.setLanguage(body.getLanguage());
+        }
+        out.setPayload(payload);
+        return out;
+    }
+
+    private AgentAccount requireAgent(String authorization, ApiEnvelope envelope) {
+        String mobile = null;
+        try {
+            mobile = jwt.mobileFromAuthHeader(authorization);
+        } catch (Exception ignored) {
+            // fall through
+        }
+        if (mobile == null || mobile.isBlank()) {
+            mobile = text(envelope != null ? envelope.getPayload() : null, "mobileNumber");
+        }
+        if (mobile == null || mobile.isBlank()) {
+            mobile = text(envelope != null ? envelope.getPayload() : null, "fromAccountNo");
+        }
+        return store.find(mobile)
+                .orElseThrow(() -> new WalletService.UnauthorizedException(
+                        "Invalid or missing token / agent for IBFT"));
+    }
+
+    private static void putIfBlank(ObjectNode payload, String field, String value) {
+        if (value == null || value.isBlank()) return;
+        String existing = text(payload, field);
+        if (existing.isBlank()) {
+            payload.put(field, value);
+        }
+    }
+
+    private static void copyFirstAlias(ObjectNode payload, String target, String... aliases) {
+        if (!text(payload, target).isBlank()) return;
+        for (String a : aliases) {
+            String v = text(payload, a);
+            if (!v.isBlank()) {
+                payload.put(target, v);
+                return;
+            }
+        }
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) return "";
+        for (String v : values) {
+            if (v != null && !v.isBlank()) return v.trim();
+        }
+        return "";
+    }
+
+    private static String digitsOnly(String s) {
+        if (s == null) return null;
+        String d = s.replaceAll("\\D", "");
+        return d.isEmpty() ? null : d;
     }
 
     private Map<String, Object> stubTxnResult(String type) {

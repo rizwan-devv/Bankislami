@@ -175,6 +175,49 @@ public class DfsProxyClient {
         }
     }
 
+    /**
+     * AgentApp corporate APIs on DFS agent host (18001), e.g. getbalance / miniStatment.
+     * Same X-Portal-Key + channel as Corporate portal.
+     */
+    public Map<String, Object> postAgentCorporate(String agentPath, ObjectNode payload) {
+        try {
+            ensurePortalReady();
+        } catch (IllegalStateException ex) {
+            return portalConfigError(ex);
+        }
+        if (agentBaseUrl.isBlank()) {
+            return failMap("503", "dfs.agent-base-url is empty");
+        }
+        ObjectNode body = mapper.createObjectNode();
+        body.put("channel", channel);
+        body.set("payload", payload != null ? payload : mapper.createObjectNode());
+        try {
+            log.info("DFS agent portal POST channel={} → {}{}", channel, agentBaseUrl, agentPath);
+            String raw = agentClient.post()
+                    .uri(agentPath)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("X-Portal-Key", portalKey)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+            return parseMap(raw);
+        } catch (RestClientResponseException ex) {
+            log.warn("DFS agent portal HTTP {}: {}", ex.getStatusCode().value(), truncate(ex.getResponseBodyAsString()));
+            return errorFromUpstream(ex.getStatusCode().value(), ex.getResponseBodyAsString());
+        } catch (Exception ex) {
+            log.warn("DFS agent portal failed: {}", ex.getMessage());
+            return failMap("502", "DFS upstream failed: " + ex.getMessage());
+        }
+    }
+
+    /** Deep-copy payload for enrichment without mutating the request body. */
+    public ObjectNode copyPayload(JsonNode payload) {
+        if (payload == null || payload.isNull() || payload.isMissingNode()) {
+            return mapper.createObjectNode();
+        }
+        return payload.deepCopy();
+    }
+
     public Map<String, Object> postTxn(String path, Object body, String clientAuthorization) {
         return post(txnClient, txnBaseUrl, path, body, clientAuthorization);
     }

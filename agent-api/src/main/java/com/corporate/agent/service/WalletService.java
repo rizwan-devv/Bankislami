@@ -1,10 +1,13 @@
 package com.corporate.agent.service;
 
 import com.corporate.agent.config.JwtService;
+import com.corporate.agent.dfs.DfsProxyClient;
 import com.corporate.agent.domain.AgentAccount;
 import com.corporate.agent.web.dto.ApiEnvelope;
 import com.corporate.agent.web.dto.ApiResponse;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -13,20 +16,33 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Wallet non-financial APIs managed locally (balance / statement / MPIN). */
+/** Wallet APIs: DFS portal when proxy enabled; otherwise local stub. */
 @Service
 public class WalletService {
 
     private final AgentStore store;
     private final JwtService jwt;
+    private final DfsProxyClient dfs;
+    private final ObjectMapper mapper;
 
-    public WalletService(AgentStore store, JwtService jwt) {
+    public WalletService(AgentStore store, JwtService jwt, DfsProxyClient dfs, ObjectMapper mapper) {
         this.store = store;
         this.jwt = jwt;
+        this.dfs = dfs;
+        this.mapper = mapper;
     }
 
     public Map<String, Object> getBalance(String authorization, ApiEnvelope envelope) {
         AgentAccount agent = requireAgent(authorization, envelope);
+        if (dfs.isEnabled() && dfs.isPortalMode()) {
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("mobileNumber", agent.getMobile());
+            payload.put("accountLevelCode",
+                    agent.getAccountLevelCode() != null ? agent.getAccountLevelCode() : "L2");
+            Map<String, Object> resp = dfs.postAgentCorporate("/agentapp/v1/corporate/getbalance", payload);
+            syncLocalBalance(agent, resp);
+            return resp;
+        }
         return ApiResponse.ok(Map.of(
                 "balance", agent.getBalance(),
                 "currentBalance", agent.getBalance()
@@ -71,6 +87,18 @@ public class WalletService {
 
     public Map<String, Object> miniStatement(String authorization, ApiEnvelope envelope) {
         AgentAccount agent = requireAgent(authorization, envelope);
+        if (dfs.isEnabled() && dfs.isPortalMode()) {
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("mobileNumber", agent.getMobile());
+            payload.put("accountLevelCode",
+                    agent.getAccountLevelCode() != null ? agent.getAccountLevelCode() : "L2");
+            JsonNode req = envelope != null ? envelope.getPayload() : null;
+            String from = text(req, "fromDate");
+            String to = text(req, "toDate");
+            if (!from.isBlank()) payload.put("fromDate", from);
+            if (!to.isBlank()) payload.put("toDate", to);
+            return dfs.postAgentCorporate("/agentapp/v1/corporate/miniStatment", payload);
+        }
         List<Map<String, Object>> rows = new ArrayList<>();
         Map<String, Object> sample = new LinkedHashMap<>();
         sample.put("rowkey", 1);
@@ -113,6 +141,24 @@ public class WalletService {
         data.put("qr", "CAQR|" + agent.getMobile() + "|" + text(p, "amount"));
         data.put("type", text(p, "type").isBlank() ? "P" : text(p, "type"));
         return ApiResponse.ok(data);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void syncLocalBalance(AgentAccount agent, Map<String, Object> resp) {
+        if (resp == null) return;
+        Object dataObj = resp.get("data");
+        if (!(dataObj instanceof Map<?, ?> data)) return;
+        Object bal = data.get("currentBalance");
+        if (bal == null) bal = data.get("balance");
+        if (bal == null) bal = data.get("availableBalance");
+        if (bal == null) return;
+        try {
+            double v = Double.parseDouble(String.valueOf(bal).replace(",", "").trim());
+            agent.setBalance(v);
+            store.save(agent);
+        } catch (NumberFormatException ignored) {
+            // keep local seed
+        }
     }
 
     private AgentAccount requireAgent(String authorization, ApiEnvelope envelope) {
