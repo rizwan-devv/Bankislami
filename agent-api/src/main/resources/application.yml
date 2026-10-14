@@ -1,0 +1,34 @@
+server:
+  port: ${PORT:8092}
+
+spring:
+  application:
+    name: corporate-agent-api
+
+# Public URL the Android app should use (set on deploy).
+app:
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8092}
+  jwt:
+    secret: ${JWT_SECRET:CorporateAgentApiDevSecretKeyChangeMe32chars!!}
+    expiry-hours: ${JWT_EXPIRY_HOURS:24}
+
+# Auth & registration are always managed HERE (not DFS).
+# Wallet can be local (stub) or later wired to your ledger.
+agent:
+  wallet-mode: ${AGENT_WALLET_MODE:local}   # local | dfs-proxy
+
+# Transactions: app → this API → DFS → response back to app
+dfs:
+  proxy:
+    enabled: ${DFS_PROXY_ENABLED:false}     # false = stub txn responses; true = forward to DFS
+  agent-base-url: ${DFS_AGENT_BASE_URL:http://46.225.160.93:18001}
+  txn-base-url: ${DFS_TXN_BASE_URL:http://46.225.160.93:18009}
+  third-party-base-url: ${DFS_THIRD_PARTY_BASE_URL:http://46.225.160.93:18008}
+  # Optional: if DFS requires a bearer for server-to-server; otherwise we forward client Authorization
+  upstream-bearer: ${DFS_UPSTREAM_BEARER:}
+  connect-timeout-ms: 15000
+  read-timeout-ms: 45000
+
+logging:
+  level:
+    com.corporate.agent: INFO

@@ -1,0 +1,19 @@
+# Secrets
+.env
+.env.local
+*.pem
+
+# Build
+**/target/
+**/node_modules/
+**/dist/
+**/data/
+**/uploads/
+*.log
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

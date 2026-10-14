@@ -1,0 +1,91 @@
+package com.dfs.corporate.web;
+
+import com.dfs.corporate.domain.PartyType;
+import com.dfs.corporate.security.AccountPrincipal;
+import com.dfs.corporate.domain.CorporateEntityType;
+import com.dfs.corporate.service.AuthService;
+import com.dfs.corporate.service.EntityKycPolicyService;
+import com.dfs.corporate.service.OnboardingService;
+import com.dfs.corporate.web.dto.ChangePasswordRequest;
+import com.dfs.corporate.web.dto.LoginRequest;
+import com.dfs.corporate.web.dto.SignupRequest;
+import com.dfs.corporate.web.dto.VerifyOtpRequest;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api")
+public class AuthController {
+
+    private final AuthService authService;
+    private final OnboardingService onboardingService;
+    private final EntityKycPolicyService entityKycPolicyService;
+
+    public AuthController(AuthService authService,
+                          OnboardingService onboardingService,
+                          EntityKycPolicyService entityKycPolicyService) {
+        this.authService = authService;
+        this.onboardingService = onboardingService;
+        this.entityKycPolicyService = entityKycPolicyService;
+    }
+
+    @GetMapping("/party-types")
+    public List<Map<String, String>> partyTypes() {
+        // Master corporate only on public signup — franchises join via invite link
+        return List.of(
+                Map.of("code", PartyType.MERCHANT.name(), "label", "Corporate (Master Wallet)")
+        );
+    }
+
+    @GetMapping("/entity-types")
+    public List<Map<String, String>> entityTypes() {
+        return Arrays.stream(CorporateEntityType.values())
+                .map(t -> Map.of("code", t.name(), "label", entityKycPolicyService.displayLabel(t)))
+                .toList();
+    }
+
+    @GetMapping("/id-document-types")
+    public List<Map<String, String>> idDocumentTypes() {
+        return Arrays.stream(com.dfs.corporate.domain.IdDocumentType.values())
+                .map(t -> Map.of("code", t.name(), "label", t.name().replace('_', ' ')))
+                .toList();
+    }
+
+    @GetMapping("/party-types/{type}/documents")
+    public List<Map<String, Object>> requiredDocs(@PathVariable PartyType type) {
+        return onboardingService.requiredFor(type).stream()
+                .map(r -> Map.<String, Object>of(
+                        "documentCode", r.getDocumentCode(),
+                        "documentLabel", r.getDocumentLabel(),
+                        "mandatory", r.isMandatory()))
+                .toList();
+    }
+
+    @PostMapping("/auth/signup")
+    public ResponseEntity<Map<String, Object>> signup(@Valid @RequestBody SignupRequest req) {
+        return ResponseEntity.ok(authService.signup(req));
+    }
+
+    @PostMapping("/auth/verify-otp")
+    public ResponseEntity<Map<String, Object>> verifyOtp(@Valid @RequestBody VerifyOtpRequest req) {
+        return ResponseEntity.ok(authService.verifyOtp(req));
+    }
+
+    @PostMapping("/auth/login")
+    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest req) {
+        return ResponseEntity.ok(authService.login(req));
+    }
+
+    @PostMapping("/auth/change-password")
+    public ResponseEntity<Map<String, Object>> changePassword(
+            @AuthenticationPrincipal AccountPrincipal principal,
+            @Valid @RequestBody ChangePasswordRequest req) {
+        return ResponseEntity.ok(authService.changePassword(principal, req));
+    }
+}

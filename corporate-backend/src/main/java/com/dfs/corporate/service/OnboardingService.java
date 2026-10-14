@@ -1,0 +1,621 @@
+package com.dfs.corporate.service;
+
+import com.dfs.corporate.domain.*;
+import com.dfs.corporate.repository.AccountRepository;
+import com.dfs.corporate.repository.AssociatedPersonRepository;
+import com.dfs.corporate.repository.PartyDocumentRepository;
+import com.dfs.corporate.repository.PartyRepository;
+import com.dfs.corporate.repository.RequiredDocumentRepository;
+import com.dfs.corporate.security.AccountPrincipal;
+import com.dfs.corporate.web.dto.AssociatedPersonRequest;
+import com.dfs.corporate.web.dto.PartyResponse;
+import com.dfs.corporate.web.dto.ProfileUpdateRequest;
+import com.dfs.corporate.web.error.ApiException;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.security.SecureRandom;
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Service
+public class OnboardingService {
+
+    private final PartyRepository partyRepository;
+    private final PartyDocumentRepository documentRepository;
+    private final RequiredDocumentRepository requiredDocumentRepository;
+    private final AssociatedPersonRepository associatedPersonRepository;
+    private final AccountRepository accountRepository;
+    private final PartnerAppUserService partnerAppUserService;
+    private final FileStorageService fileStorageService;
+    private final PartyStatusSyncService partyStatusSyncService;
+    private final PasswordEncoder passwordEncoder;
+    private final MailService mailService;
+    private final PortalUserService portalUserService;
+    private final EntityKycPolicyService entityKycPolicyService;
+    private final EntityOnboardingConfigService entityOnboardingConfigService;
+    private final SecureRandom random = new SecureRandom();
+
+    public OnboardingService(PartyRepository partyRepository,
+                             PartyDocumentRepository documentRepository,
+                             RequiredDocumentRepository requiredDocumentRepository,
+                             AssociatedPersonRepository associatedPersonRepository,
+                             AccountRepository accountRepository,
+                             PartnerAppUserService partnerAppUserService,
+                             FileStorageService fileStorageService,
+                             PartyStatusSyncService partyStatusSyncService,
+                             PasswordEncoder passwordEncoder,
+                             MailService mailService,
+                             PortalUserService portalUserService,
+                             EntityKycPolicyService entityKycPolicyService,
+                             EntityOnboardingConfigService entityOnboardingConfigService) {
+        this.partyRepository = partyRepository;
+        this.documentRepository = documentRepository;
+        this.requiredDocumentRepository = requiredDocumentRepository;
+        this.associatedPersonRepository = associatedPersonRepository;
+        this.accountRepository = accountRepository;
+        this.partnerAppUserService = partnerAppUserService;
+        this.fileStorageService = fileStorageService;
+        this.partyStatusSyncService = partyStatusSyncService;
+        this.passwordEncoder = passwordEncoder;
+        this.mailService = mailService;
+        this.portalUserService = portalUserService;
+        this.entityKycPolicyService = entityKycPolicyService;
+        this.entityOnboardingConfigService = entityOnboardingConfigService;
+    }
+
+    public PartyResponse me(AccountPrincipal principal) {
+        return enrich(getParty(principal));
+    }
+
+    @Transactional
+    public PartyResponse updateProfile(AccountPrincipal principal, ProfileUpdateRequest req, String clientIp, String userAgent) {
+        Party party = getParty(principal);
+        assertEditable(party);
+        assertCorporateParty(party);
+
+        if (!Boolean.TRUE.equals(req.getTermsAccepted())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Terms & conditions must be accepted");
+        }
+
+        party.setFullName(req.getFullName().trim());
+        party.setBusinessName(req.getBusinessName().trim());
+        party.setEntityType(req.getEntityType());
+        if (req.getPartnershipUnregistered() != null) {
+            party.setPartnershipUnregistered(req.getPartnershipUnregistered());
+        }
+        if (req.getApplicantIsPartner() != null) {
+            party.setApplicantIsPartner(req.getApplicantIsPartner());
+        }
+        // Sole prop / small business: owner is always the mobile KYC user (no authorized-person CDD)
+        if (!ConsolidatedKycRules.needsPartnerRoster(party.getEntityType())) {
+            party.setApplicantIsPartner(true);
+        }
+        party.setIncorporationNumber(trim(req.getIncorporationNumber()));
+        party.setIncorporationDate(req.getIncorporationDate());
+        party.setIncorporationCountry(trim(req.getIncorporationCountry()) != null ? trim(req.getIncorporationCountry()) : "Pakistan");
+        party.setIncorporationAuthority(trim(req.getIncorporationAuthority()));
+        party.setNtnNumber(trim(req.getNtnNumber()));
+        party.setTaxCountry(trim(req.getTaxCountry()) != null ? trim(req.getTaxCountry()) : "Pakistan");
+        party.setFatcaCrsDeclared(Boolean.TRUE.equals(req.getFatcaCrsDeclared()));
+        party.setFatcaCrsDetails(trim(req.getFatcaCrsDetails()));
+        party.setRegisteredAddress(req.getRegisteredAddress().trim());
+        party.setMailingAddress(trim(req.getMailingAddress()));
+        party.setPlaceOfBusiness(trim(req.getPlaceOfBusiness()));
+        party.setAddressDifferenceReason(trim(req.getAddressDifferenceReason()));
+        party.setBusinessAddress(party.getPlaceOfBusiness() != null ? party.getPlaceOfBusiness() : party.getRegisteredAddress());
+        party.setAddressLine(party.getRegisteredAddress());
+        if (req.getCity() != null) party.setCity(req.getCity().trim());
+        if (req.getCountry() != null) party.setCountry(req.getCountry().trim());
+        else party.setCountry("Pakistan");
+        if (req.getPhone() != null && !req.getPhone().isBlank()) party.setPhone(req.getPhone().trim());
+        party.setNatureOfBusiness(req.getNatureOfBusiness().trim());
+        party.setBusinessLicenseDetails(trim(req.getBusinessLicenseDetails()));
+        party.setPurposeOfAccount(req.getPurposeOfAccount().trim());
+        party.setIntendedRelationship(trim(req.getIntendedRelationship()));
+        party.setTermsAccepted(true);
+        party.setTermsAcceptedAt(Instant.now());
+        party.setKycTier("ENTITY_CONSOLIDATED");
+        party.setClientIp(clientIp);
+        party.setUserAgent(userAgent != null && userAgent.length() > 500 ? userAgent.substring(0, 500) : userAgent);
+        if (req.getGeoLocation() != null) party.setGeoLocation(req.getGeoLocation());
+        if (req.getOnboardingStep() != null) party.setOnboardingStep(req.getOnboardingStep());
+        if (req.getEddRequired() != null) party.setEddRequired(req.getEddRequired());
+        if (req.getEddNotes() != null) party.setEddNotes(req.getEddNotes());
+        if (req.getVideoKycRef() != null) party.setVideoKycRef(req.getVideoKycRef());
+
+        // Extend draft resume window (Framework §J — up to 30 days)
+        party.setDraftExpiresAt(Instant.now().plus(30, ChronoUnit.DAYS));
+
+        boolean addressesDiffer = !eq(party.getRegisteredAddress(), party.getMailingAddress())
+                || !eq(party.getRegisteredAddress(), party.getPlaceOfBusiness());
+        if (addressesDiffer && isBlank(party.getAddressDifferenceReason())
+                && !isBlank(party.getMailingAddress()) && !isBlank(party.getPlaceOfBusiness())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Provide reason when registered / mailing / place of business addresses differ");
+        }
+
+        return enrich(partyRepository.save(party));
+    }
+
+    @Transactional
+    public PartyResponse addAssociatedPerson(AccountPrincipal principal, AssociatedPersonRequest req) {
+        Party party = getParty(principal);
+        assertEditable(party);
+        // Authorized-person CDD removed: only Partnership/LLP partner roster is allowed
+        if (!ConsolidatedKycRules.needsPartnerRoster(party.getEntityType())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Associated persons are not used for this entity. "
+                            + "Sole prop / small business: tick “I am the owner” — owner completes KYC in the mobile app.");
+        }
+        if (isBlank(req.getPhone()) || isBlank(req.getEmail()) || isBlank(req.getFullName())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Partner roster requires full name, phone (app user ID) and email");
+        }
+        AssociatedPerson p = new AssociatedPerson();
+        applyPerson(p, party.getId(), req);
+        // Always store as PARTNER — partners self-KYC in the app (no authorized-signatory role)
+        p.setRoleType(AssociatedPersonRole.PARTNER);
+        p.setAuthorizedToOperate(true);
+        associatedPersonRepository.save(p);
+        return enrich(party);
+    }
+
+    @Transactional
+    public PartyResponse updateAssociatedPerson(AccountPrincipal principal, Long personId, AssociatedPersonRequest req) {
+        Party party = getParty(principal);
+        assertEditable(party);
+        AssociatedPerson p = associatedPersonRepository.findById(personId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Associated person not found"));
+        if (!p.getPartyId().equals(party.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Person does not belong to this application");
+        }
+        applyPerson(p, party.getId(), req);
+        associatedPersonRepository.save(p);
+        return enrich(party);
+    }
+
+    @Transactional
+    public PartyResponse removeAssociatedPerson(AccountPrincipal principal, Long personId) {
+        Party party = getParty(principal);
+        assertEditable(party);
+        associatedPersonRepository.deleteByPartyIdAndId(party.getId(), personId);
+        return enrich(party);
+    }
+
+    @Transactional
+    public PartyResponse uploadDocument(AccountPrincipal principal, String documentCode, MultipartFile file) {
+        Party party = getParty(principal);
+        String code = documentCode.toUpperCase();
+        boolean manualKyc = ConsolidatedKycRules.isManualKycCode(code);
+        if (manualKyc) {
+            entityKycPolicyService.storeManualKyc(
+                    party.getId(), code, file, "Uploaded on portal by " + principal.getUsername(), false);
+            partyStatusSyncService.syncAfterDocumentChange(party.getId());
+            return enrich(partyRepository.findById(party.getId()).orElse(party));
+        }
+        assertCanUploadDocument(party, code);
+        List<RequiredDocument> catalog = requiredDocumentRepository.findByPartyTypeOrderByIdAsc(party.getPartyType());
+        boolean known = catalog.stream().anyMatch(r -> r.getDocumentCode().equalsIgnoreCase(documentCode))
+                || entityOnboardingConfigService.acceptsUpload(party.getEntityType(), code);
+        boolean partnerSlot = ConsolidatedKycRules.isPartnerUploadCode(documentCode);
+        if (!known && !partnerSlot) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Unknown document code for entity KYC (Annex-C)");
+        }
+        String path = fileStorageService.store(party.getId(), code, file);
+        PartyDocument doc = documentRepository.findByPartyIdAndDocumentCode(party.getId(), code)
+                .orElseGet(PartyDocument::new);
+        doc.setPartyId(party.getId());
+        doc.setDocumentCode(code);
+        doc.setOriginalName(file.getOriginalFilename() != null ? file.getOriginalFilename() : documentCode);
+        doc.setStoredPath(path);
+        doc.setContentType(file.getContentType());
+        doc.setStatus(DocumentStatus.PENDING);
+        doc.setReviewNote(null);
+        doc.setUploadedAt(Instant.now());
+        documentRepository.save(doc);
+        party.setDraftExpiresAt(Instant.now().plus(30, ChronoUnit.DAYS));
+        partyRepository.save(party);
+        partyStatusSyncService.syncAfterDocumentChange(party.getId());
+        return enrich(partyRepository.findById(party.getId()).orElse(party));
+    }
+
+    @Transactional
+    public PartyResponse submit(AccountPrincipal principal) {
+        Party party = getParty(principal);
+        assertEditable(party);
+        validateReadyToSubmit(party);
+
+        // Framework §F.4 — sanctions screening stub (manual CLEAR until vendor integrated)
+        if (party.getSanctionsStatus() == null || party.getSanctionsStatus() == ScreeningStatus.PENDING) {
+            party.setSanctionsStatus(ScreeningStatus.MANUAL_REVIEW);
+            party.setSanctionsNotes("Queued for UNSC/ATA sanctions pre-screening (manual until screening API connected)");
+            party.setSanctionsScreenedAt(Instant.now());
+        }
+        for (AssociatedPerson ap : associatedPersonRepository.findByPartyIdOrderByIdAsc(party.getId())) {
+            if (ap.getSanctionsStatus() == ScreeningStatus.PENDING) {
+                ap.setSanctionsStatus(ScreeningStatus.MANUAL_REVIEW);
+                associatedPersonRepository.save(ap);
+            }
+        }
+
+        // Framework §F.1 — identity verification stub for digital EMI path
+        if (party.getIdentityVerificationStatus() == IdentityVerificationStatus.PENDING) {
+            party.setIdentityVerificationStatus(IdentityVerificationStatus.DEBIT_BLOCKED);
+            party.setIdentityVerificationMethod("PENDING_BV_OR_VERISYS");
+        }
+
+        Instant now = Instant.now();
+        party.setSubmittedAt(now);
+        party.setDecisionDueAt(addWorkingDays(now, 5)); // Framework §I — entity TAT 5 working days
+        party.setStatus(PartyStatus.SUBMITTED);
+        party.setRejectionReason(null);
+        party.setOnboardingStep(5);
+        partyRepository.save(party);
+
+        // Provision mobile-app users + email links/PINs (partners + lead if applicantIsPartner)
+        partnerAppUserService.provisionOnSubmit(party);
+        partnerAppUserService.tryAdvanceParty(party.getId());
+
+        // Portal login credentials so applicant can return for re-upload before final approve
+        issuePortalCredentialsOnSubmit(party);
+        portalUserService.ensurePartnerPortalLogins(party);
+
+        return enrich(partyRepository.findById(party.getId()).orElse(party));
+    }
+
+    private void issuePortalCredentialsOnSubmit(Party party) {
+        Account account = firstAccount(party.getId());
+        String rawPassword = generateTempPassword();
+        account.setPasswordHash(passwordEncoder.encode(rawPassword));
+        account.setFirstLogin(true);
+        accountRepository.save(account);
+
+        mailService.send(party.getEmail(), "PayFast Corporate — Portal login credentials",
+                """
+                Hello %s,
+
+                Your application (%s) has been submitted.
+
+                Portal login:
+                  Email: %s
+                  Temporary password: %s
+
+                On first login you must change this password.
+                Use the new password to track status and re-upload any documents rejected by backoffice.
+
+                Tracking ID: %s
+
+                — PayFast Corporate
+                """.formatted(
+                        party.getFullName(),
+                        party.getTrackingId(),
+                        party.getEmail(),
+                        rawPassword,
+                        party.getTrackingId()));
+    }
+
+    private String generateTempPassword() {
+        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 12; i++) {
+            sb.append(chars.charAt(random.nextInt(chars.length())));
+        }
+        return sb.toString();
+    }
+
+    public List<RequiredDocument> requiredFor(PartyType type) {
+        if (type != PartyType.MERCHANT && type != PartyType.SUB_MERCHANT) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only corporate entity types supported");
+        }
+        return requiredDocumentRepository.findByPartyTypeOrderByIdAsc(type);
+    }
+
+    private void validateReadyToSubmit(Party party) {
+        if (party.getEntityType() == null
+                || isBlank(party.getBusinessName())
+                || isBlank(party.getRegisteredAddress())
+                || isBlank(party.getNatureOfBusiness())
+                || isBlank(party.getPurposeOfAccount())
+                || !Boolean.TRUE.equals(party.getTermsAccepted())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Complete entity information (Framework §E Table-B) before submit");
+        }
+
+        List<AssociatedPerson> persons = associatedPersonRepository.findByPartyIdOrderByIdAsc(party.getId());
+
+        if (ConsolidatedKycRules.needsPartnerRoster(party.getEntityType())) {
+            // Partnership / LLP: partners on roster self-KYC in the mobile app
+            List<AssociatedPerson> partners = persons.stream()
+                    .filter(p -> p.getRoleType() == AssociatedPersonRole.PARTNER)
+                    .toList();
+            if (partners.isEmpty() && !Boolean.TRUE.equals(party.getApplicantIsPartner())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Add partner roster (name, phone, email) — each partner completes KYC in the mobile app");
+            }
+            for (AssociatedPerson p : partners) {
+                if (isBlank(p.getPhone()) || isBlank(p.getEmail())) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST,
+                            "Each partner needs phone (app user ID) and email: " + p.getFullName());
+                }
+            }
+            if (Boolean.TRUE.equals(party.getApplicantIsPartner()) && isBlank(party.getPhone())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Phone required when you are also a partner (used as mobile app user ID)");
+            }
+        } else {
+            // Sole prop / small business: owner only — no authorized-person CDD on portal
+            if (!Boolean.TRUE.equals(party.getApplicantIsPartner())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Confirm you are the owner/applicant (mobile KYC will be sent to you after submit)");
+            }
+            if (isBlank(party.getPhone())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Phone required — used as mobile app user ID for the owner");
+            }
+        }
+
+        Set<String> uploaded = documentRepository.findByPartyIdOrderByUploadedAtDesc(party.getId()).stream()
+                .filter(d -> d.getStatus() != DocumentStatus.REJECTED)
+                .map(PartyDocument::getDocumentCode)
+                .collect(Collectors.toSet());
+
+        boolean unreg = Boolean.TRUE.equals(party.getPartnershipUnregistered());
+        if (party.getPartyType() != PartyType.SUB_MERCHANT
+                && entityOnboardingConfigService.hasCatalog(party.getEntityType())) {
+            String gap = entityOnboardingConfigService.submissionGap(party.getEntityType(), unreg, uploaded);
+            if (gap != null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, gap);
+            }
+        } else {
+            Set<String> mandatory = ConsolidatedKycRules.mandatoryDocuments(party.getPartyType(), party.getEntityType(), unreg);
+            List<String> missing = mandatory.stream().filter(c -> !uploaded.contains(c)).sorted().toList();
+            if (!missing.isEmpty()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Missing Annex-C mandatory documents: " + String.join(", ", missing));
+            }
+            String oneOfGap = ConsolidatedKycRules.oneOfGap(party.getEntityType(), uploaded);
+            if (oneOfGap != null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, oneOfGap);
+            }
+        }
+
+        if (ConsolidatedKycRules.needsPartnerRoster(party.getEntityType())) {
+            for (AssociatedPerson p : persons) {
+                if (p.getRoleType() != AssociatedPersonRole.PARTNER) {
+                    continue;
+                }
+                List<String> need = List.of(
+                        ConsolidatedKycRules.partnerCnicFront(p.getId()),
+                        ConsolidatedKycRules.partnerCnicBack(p.getId()),
+                        ConsolidatedKycRules.partnerAgreement(p.getId())
+                );
+                List<String> miss = need.stream().filter(c -> !uploaded.contains(c)).toList();
+                if (!miss.isEmpty()) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST,
+                            "Upload CNIC front/back + agreement for partner " + p.getFullName()
+                                    + " (codes: " + String.join(", ", miss) + ")");
+                }
+            }
+        }
+
+    }
+
+    private PartyResponse enrich(Party party) {
+        if (party.getStatus() == PartyStatus.SUBMITTED
+                || party.getStatus() == PartyStatus.PENDING_APPROVAL
+                || party.getStatus() == PartyStatus.INCOMPLETE) {
+            party = partyStatusSyncService.sync(party);
+            party = partyRepository.findById(party.getId()).orElse(party);
+        }
+        PartyResponse res = PartyResponse.from(party);
+        List<PartyDocument> docs = documentRepository.findByPartyIdOrderByUploadedAtDesc(party.getId());
+        res.setDocuments(docs.stream().map(PartyResponse.DocumentItem::from).toList());
+        res.setAssociatedPersons(associatedPersonRepository.findByPartyIdOrderByIdAsc(party.getId()).stream()
+                .map(PartyResponse.AssociatedPersonItem::from).toList());
+        res.setPartnerInvites(List.of()); // portal partner KYC invites disabled
+        List<com.dfs.corporate.web.dto.PartnerAppUserResponse> appUsers = partnerAppUserService.listForParty(party.getId());
+        res.setPartnerAppUsers(appUsers);
+        res.setPartnerKycTotal(appUsers.size());
+        res.setPartnerKycCompleted((int) appUsers.stream()
+                .filter(u -> u.getStatus() == PartnerAppKycStatus.KYC_COMPLETED)
+                .count());
+        boolean kycRequired = entityKycPolicyService.isKycRequired(party.getEntityType());
+        res.setKycRequired(kycRequired);
+        res.setRegistrationKycRequired(entityKycPolicyService.isRegistrationKycRequired(party.getEntityType()));
+        res.setOnboardingKycRequired(entityKycPolicyService.isOnboardingKycRequired(party.getEntityType()));
+        res.setKycSatisfied(!kycRequired || partyStatusSyncService.kycSatisfied(party.getId()));
+
+        // Dynamic required docs for partner CNIC/agreement slots
+        List<AssociatedPerson> persons = associatedPersonRepository.findByPartyIdOrderByIdAsc(party.getId());
+        Set<String> uploadedCodes = docs.stream()
+                .filter(d -> d.getStatus() != DocumentStatus.REJECTED)
+                .map(PartyDocument::getDocumentCode)
+                .collect(Collectors.toSet());
+        boolean unreg = Boolean.TRUE.equals(party.getPartnershipUnregistered());
+        List<PartyResponse.RequiredItem> required = new java.util.ArrayList<>();
+        List<PartyResponse.RequiredItem> registrationDocs = new java.util.ArrayList<>();
+        List<PartyResponse.RequiredItem> onboardingDocs = new java.util.ArrayList<>();
+        if (party.getPartyType() != PartyType.SUB_MERCHANT
+                && entityOnboardingConfigService.hasCatalog(party.getEntityType())) {
+            registrationDocs.addAll(entityOnboardingConfigService.checklist(
+                    party.getEntityType(), DocumentPhase.REGISTRATION, unreg, uploadedCodes));
+            onboardingDocs.addAll(entityOnboardingConfigService.checklist(
+                    party.getEntityType(), DocumentPhase.ONBOARDING, unreg, uploadedCodes));
+            required.addAll(registrationDocs);
+            required.addAll(onboardingDocs);
+        } else {
+            Set<String> mandatory = ConsolidatedKycRules.mandatoryDocuments(party.getPartyType(), party.getEntityType(), unreg);
+            List<RequiredDocument> catalog = requiredDocumentRepository.findByPartyTypeOrderByIdAsc(party.getPartyType());
+            java.util.Map<String, String> labels = new java.util.HashMap<>();
+            for (RequiredDocument r : catalog) {
+                labels.put(r.getDocumentCode(), r.getDocumentLabel());
+            }
+            Set<String> oneOf = ConsolidatedKycRules.oneOfCodes(party.getEntityType());
+            Set<String> optional = ConsolidatedKycRules.optionalDocuments(party.getEntityType());
+            java.util.LinkedHashSet<String> show = new java.util.LinkedHashSet<>();
+            show.addAll(mandatory);
+            show.addAll(oneOf);
+            show.addAll(optional);
+            for (String code : show) {
+                String label = labels.getOrDefault(code, ConsolidatedKycRules.documentLabel(code));
+                boolean hardRequired = mandatory.contains(code);
+                PartyResponse.RequiredItem item = new PartyResponse.RequiredItem(
+                        code, label, hardRequired, uploadedCodes.contains(code), DocumentPhase.ONBOARDING.name());
+                onboardingDocs.add(item);
+                required.add(item);
+            }
+        }
+        if (ConsolidatedKycRules.needsPartnerRoster(party.getEntityType())) {
+            for (AssociatedPerson p : persons) {
+                if (p.getRoleType() != AssociatedPersonRole.PARTNER) {
+                    continue;
+                }
+                String front = ConsolidatedKycRules.partnerCnicFront(p.getId());
+                String back = ConsolidatedKycRules.partnerCnicBack(p.getId());
+                String agr = ConsolidatedKycRules.partnerAgreement(p.getId());
+                PartyResponse.RequiredItem f = new PartyResponse.RequiredItem(
+                        front, "Partner CNIC front — " + p.getFullName(), true, uploadedCodes.contains(front),
+                        DocumentPhase.ONBOARDING.name());
+                PartyResponse.RequiredItem b = new PartyResponse.RequiredItem(
+                        back, "Partner CNIC back — " + p.getFullName(), true, uploadedCodes.contains(back),
+                        DocumentPhase.ONBOARDING.name());
+                PartyResponse.RequiredItem a = new PartyResponse.RequiredItem(
+                        agr, "Partner agreement — " + p.getFullName(), true, uploadedCodes.contains(agr),
+                        DocumentPhase.ONBOARDING.name());
+                onboardingDocs.add(f);
+                onboardingDocs.add(b);
+                onboardingDocs.add(a);
+                required.add(f);
+                required.add(b);
+                required.add(a);
+            }
+        }
+        res.setRegistrationDocuments(registrationDocs);
+        res.setOnboardingDocuments(onboardingDocs);
+        res.setRequiredDocuments(required);
+
+        try {
+            validateReadyToSubmit(party);
+            res.setCanSubmit(party.getStatus() == PartyStatus.DRAFT || party.getStatus() == PartyStatus.REJECTED);
+        } catch (ApiException ex) {
+            res.setCanSubmit(false);
+        }
+        return res;
+    }
+
+    private void applyPerson(AssociatedPerson p, Long partyId, AssociatedPersonRequest req) {
+        p.setPartyId(partyId);
+        p.setRoleType(req.getRoleType());
+        p.setFullName(req.getFullName().trim());
+        p.setFatherOrSpouseName(trim(req.getFatherOrSpouseName()));
+        p.setDateOfBirth(req.getDateOfBirth());
+        p.setMotherMaidenName(trim(req.getMotherMaidenName()));
+        p.setPlaceOfBirth(trim(req.getPlaceOfBirth()));
+        p.setIdDocumentType(req.getIdDocumentType());
+        p.setIdDocumentNumber(trim(req.getIdDocumentNumber()));
+        p.setIdIssueDate(req.getIdIssueDate());
+        p.setIdExpiryDate(req.getIdExpiryDate());
+        p.setPassportNumber(trim(req.getPassportNumber()));
+        p.setPassportCountry(trim(req.getPassportCountry()));
+        p.setNationalities(trim(req.getNationalities()));
+        p.setTaxResidencies(trim(req.getTaxResidencies()));
+        p.setEmail(trim(req.getEmail()));
+        p.setPhone(trim(req.getPhone()));
+        p.setMailingAddress(trim(req.getMailingAddress()));
+        p.setOccupation(trim(req.getOccupation()));
+        p.setOwnershipPercent(req.getOwnershipPercent());
+        p.setAuthorizedToOperate(Boolean.TRUE.equals(req.getAuthorizedToOperate()));
+        p.setFatcaCrsDeclared(Boolean.TRUE.equals(req.getFatcaCrsDeclared()));
+        p.setFatcaCrsDetails(trim(req.getFatcaCrsDetails()));
+    }
+
+    private Instant addWorkingDays(Instant from, int days) {
+        LocalDate d = LocalDate.ofInstant(from, ZoneId.systemDefault());
+        int added = 0;
+        while (added < days) {
+            d = d.plusDays(1);
+            if (d.getDayOfWeek() != DayOfWeek.SATURDAY && d.getDayOfWeek() != DayOfWeek.SUNDAY) {
+                added++;
+            }
+        }
+        return d.atStartOfDay(ZoneId.systemDefault()).toInstant();
+    }
+
+    private Party getParty(AccountPrincipal principal) {
+        return partyRepository.findById(principal.getPartyId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Party not found"));
+    }
+
+    private void assertCorporateParty(Party party) {
+        if (party.getPartyType() != PartyType.MERCHANT && party.getPartyType() != PartyType.SUB_MERCHANT) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only MERCHANT / SUB_MERCHANT entity accounts");
+        }
+    }
+
+    private void assertEditable(Party party) {
+        if (party.getStatus() != PartyStatus.DRAFT && party.getStatus() != PartyStatus.REJECTED) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Application locked in status " + party.getStatus());
+        }
+        if (party.getDraftExpiresAt() != null && party.getDraftExpiresAt().isBefore(Instant.now())
+                && party.getStatus() == PartyStatus.DRAFT) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Draft expired (30-day resume window). Please start a new application.");
+        }
+        if (party.getStatus() == PartyStatus.REJECTED) {
+            party.setStatus(PartyStatus.DRAFT);
+        }
+    }
+
+    /**
+     * Full profile edit: DRAFT / REJECTED only.
+     * Document re-upload: also INCOMPLETE / SUBMITTED / PENDING_APPROVAL when replacing a REJECTED
+     * doc or uploading a still-missing required code (does not unlock full profile edit).
+     */
+    private void assertCanUploadDocument(Party party, String documentCode) {
+        if (party.getStatus() == PartyStatus.DRAFT || party.getStatus() == PartyStatus.REJECTED) {
+            assertEditable(party);
+            return;
+        }
+        if (party.getStatus() != PartyStatus.INCOMPLETE
+                && party.getStatus() != PartyStatus.SUBMITTED
+                && party.getStatus() != PartyStatus.PENDING_APPROVAL) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Application locked in status " + party.getStatus());
+        }
+        PartyDocument existing = documentRepository.findByPartyIdAndDocumentCode(party.getId(), documentCode)
+                .orElse(null);
+        if (existing != null && existing.getStatus() == DocumentStatus.REJECTED) {
+            return; // re-upload rejected document only
+        }
+        if (existing == null || existing.getStatus() == DocumentStatus.REJECTED) {
+            return; // missing slot
+        }
+        // Allow replace of PENDING after reject cycle already cleared — block APPROVED overwrite unless rejected
+        if (existing.getStatus() == DocumentStatus.APPROVED) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Document already approved — contact backoffice if a change is needed");
+        }
+        if (existing.getStatus() == DocumentStatus.PENDING) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "Document already uploaded and awaiting review. Only rejected documents can be re-uploaded.");
+        }
+    }
+
+    private Account firstAccount(Long partyId) {
+        return accountRepository.findAllByPartyIdOrderByCreatedAtAsc(partyId).stream()
+                .findFirst()
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Account missing"));
+    }
+
+    private boolean isBlank(String s) { return s == null || s.isBlank(); }
+    private String trim(String s) { return isBlank(s) ? null : s.trim(); }
+    private boolean eq(String a, String b) {
+        if (isBlank(a) && isBlank(b)) return true;
+        if (isBlank(a) || isBlank(b)) return true; // treat blank as "same / not provided"
+        return a.trim().equalsIgnoreCase(b.trim());
+    }
+}

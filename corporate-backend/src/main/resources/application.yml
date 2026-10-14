@@ -1,0 +1,132 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: bankislami-corporate
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:bankislami_corporate}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=UTF-8
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${MYSQL_USER:dfs}
+    password: ${MYSQL_PASSWORD:change-me}
+  h2:
+    console:
+      enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+  flyway:
+    enabled: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 120MB
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USER:}
+    password: ${MAIL_PASS:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
+
+app:
+  brand-name: ${APP_BRAND_NAME:Bank Islami Corporate}
+  jwt:
+    secret: ${JWT_SECRET:bankislami-corporate-dev-secret-change-me-in-prod-32chars}
+    expiration-ms: 86400000
+  upload-dir: ./uploads
+  cors-origins: ${APP_CORS_ORIGINS:http://localhost:5175,http://127.0.0.1:5175,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,capacitor://localhost,http://localhost,http://127.0.0.1,http://46.224.146.158:8060}
+  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5175}
+  mobile-app-base-url: ${MOBILE_APP_BASE_URL:bankislamicorporate://kyc}
+  mail:
+    from: ${MAIL_FROM:noreply@bankislami.local}
+    # When false, credentials/OTP are logged instead of SMTP send (easy local testing)
+    enabled: ${MAIL_ENABLED:false}
+  # Inbound franchise commission. Mock settle = no DFS FT; scheduler off.
+  commission:
+    settle-enabled: ${COMMISSION_SETTLE_ENABLED:false}
+    settle-mock: ${COMMISSION_SETTLE_MOCK:true}
+    settle-interval-ms: ${COMMISSION_SETTLE_INTERVAL_MS:30000}
+
+# Payment approval workflow (Maker → Checker → Approver → Releaser)
+approvals:
+  payment:
+    # Amounts at or below this skip Checker & Approver → go straight to Releaser after Maker submit.
+    # Above this: full Checker → Approver → Releaser. Env: APPROVAL_DIRECT_RELEASE_MAX
+    direct-release-max-amount: ${APPROVAL_DIRECT_RELEASE_MAX:5000}
+
+# External DFS backend corporate account create API
+dfs:
+  account-api:
+    enabled: ${DFS_ACCOUNT_API_ENABLED:false}
+    base-url: ${DFS_ACCOUNT_API_BASE_URL:http://46.225.160.93:18001}
+    path: /agentapp/v1/corporateonboarding
+    segments-path: /agentapp/v1/getAllSegments
+    lovs-path: /agentapp/v1/getAllLovs
+    # Corporate account create — COP. Segment is parent businessName (not a LOV id).
+    channel: ${DFS_ACCOUNT_API_CHANNEL:COP}
+    level-code: L4
+    default-city-id: "1"
+    default-business-type-id: "1"
+    default-monthly-volume-id: "1"
+    api-key: ${DFS_ACCOUNT_API_KEY:}
+    use-stub: false
+  # Bulk employee onboard → DFS App POST /v1/corporate/bulkAccounts
+  employee-onboard:
+    # false = live DFS bulkAccounts (default). true = local stub only.
+    use-stub: ${DFS_EMPLOYEE_ONBOARD_USE_STUB:false}
+    channel: ${DFS_EMPLOYEE_ONBOARD_CHANNEL:COP}
+    segment: ${DFS_EMPLOYEE_ONBOARD_SEGMENT:Corporate Clients Segment}
+    bulk-accounts-path: ${DFS_EMPLOYEE_ONBOARD_PATH:/v1/corporate/bulkAccounts}
+    # Shared secret for POST /api/public/employee-onboard/confirm (header X-Employee-Onboard-Key)
+    confirm-key: ${DFS_EMPLOYEE_ONBOARD_CONFIRM_KEY:dev-employee-onboard-key}
+  # AgentApp corporate portal APIs (balance / mini-statement / change MPIN) — X-Portal-Key
+  portal-api:
+    enabled: ${DFS_PORTAL_API_ENABLED:false}
+    portal-key: ${CORPORATE_PORTAL_API_KEY:}
+    get-balance-path: /agentapp/v1/corporate/getbalance
+    mini-statement-path: /agentapp/v1/corporate/miniStatment
+    change-mpin-path: /agentapp/v1/corporate/changempin
+    # Transactions service (IBFT / UBP / local FT). Include /transactions context path.
+    txn-base-url: ${DFS_TXN_API_BASE_URL:http://46.225.160.93:18009/transactions}
+    # App service (customer MPIN verify). Include /app context path.
+    app-base-url: ${DFS_APP_API_BASE_URL:http://46.225.160.93:18002/app}
+    channel: ${DFS_PORTAL_API_CHANNEL:COP}
+  # CMS card system (server-to-server). See docs/DFS-Corporate-CMS-API.postman_collection.json
+  cms-api:
+    enabled: ${DFS_CMS_API_ENABLED:false}
+    portal-base-url: ${DFS_CMS_PORTAL_BASE_URL:http://46.224.146.158:7070}
+    app-base-url: ${DFS_CMS_APP_BASE_URL:http://46.224.146.158:8016}
+    portal-login-id: ${DFS_CMS_PORTAL_LOGIN_ID:}
+    portal-password: ${DFS_CMS_PORTAL_PASSWORD:}
+    app-username: ${DFS_CMS_APP_USERNAME:}
+    app-password: ${DFS_CMS_APP_PASSWORD:}
+    app-api-key: ${DFS_CMS_APP_API_KEY:}
+
+aml:
+  # Name similarity (0-100). At or above → MANUAL_REVIEW. CNIC exact match is always HIT.
+  fuzzy-threshold: ${AML_FUZZY_THRESHOLD:88}
+  import:
+    # Weekly download of official OFAC SDN (+ ALT) CSV and UN consolidated XML (not HTML scrape).
+    schedule-enabled: ${AML_IMPORT_SCHEDULE_ENABLED:true}
+    cron: ${AML_IMPORT_CRON:0 0 2 * * SUN}
+    ofac-enabled: ${AML_IMPORT_OFAC_ENABLED:true}
+    un-enabled: ${AML_IMPORT_UN_ENABLED:true}
+    ofac-sdn-url: ${AML_IMPORT_OFAC_SDN_URL:https://sanctionslistservice.ofac.treas.gov/api/download/SDN.CSV}
+    ofac-alt-url: ${AML_IMPORT_OFAC_ALT_URL:https://sanctionslistservice.ofac.treas.gov/api/download/ALT.CSV}
+    un-xml-url: ${AML_IMPORT_UN_XML_URL:https://scsanctions.un.org/resources/xml/en/consolidated.xml}
+    # Cap rows per source file to protect DB during first import / demos
+    max-names: ${AML_IMPORT_MAX_NAMES:50000}
+
+logging:
+  level:
+    com.dfs.corporate: INFO
