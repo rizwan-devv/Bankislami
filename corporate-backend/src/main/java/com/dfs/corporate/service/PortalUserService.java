@@ -108,7 +108,7 @@ public class PortalUserService {
             return;
         }
         String partyName = party.getBusinessName() != null && !party.getBusinessName().isBlank()
-                ? party.getBusinessName() : "PayFast Corporate";
+                ? party.getBusinessName() : "Bank Islami Corporate";
         for (String email : emails) {
             accountRepository.findByEmailIgnoreCase(email).ifPresentOrElse(existing -> {
                 if (!party.getId().equals(existing.getPartyId())) {

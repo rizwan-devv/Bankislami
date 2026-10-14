@@ -39,7 +39,7 @@ public class DataInitializer {
                 party.setPartyType(PartyType.MERCHANT);
                 party.setStatus(PartyStatus.ACTIVE);
                 party.setFullName("Platform Admin");
-                party.setBusinessName("PayFast Corporate");
+                party.setBusinessName("Bank Islami Corporate");
                 party.setEmail(adminEmail);
                 party.setPhone("0000000000");
                 party.setCountry("Pakistan");

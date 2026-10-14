@@ -70,6 +70,7 @@ public class CorporateXpinService {
 
         String company = party.getBusinessName() != null && !party.getBusinessName().isBlank()
                 ? party.getBusinessName() : party.getFullName();
+        String brand = mailService.brand();
         String body = """
                 Your XPin for %s
 
@@ -79,9 +80,11 @@ public class CorporateXpinService {
                 Valid until: %s
 
                 Present this PIN at the branch. No funds are deducted automatically.
-                """.formatted(company, row.getPersonName(), pin, row.getAmount(), validUntil);
 
-        mailService.send(row.getEmail(), "Your Corporate XPin", body);
+                — %s
+                """.formatted(company, row.getPersonName(), pin, row.getAmount(), validUntil, brand);
+
+        mailService.send(row.getEmail(), "Your " + brand + " XPin", body);
         log.info("[SMS-DEV] XPin {} to phone={} (amount={})", pin, row.getPhone(), row.getAmount());
 
         return toResponse(row);

@@ -24,6 +24,7 @@ export function UploadBillsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
+  const [dragOver, setDragOver] = useState(false);
 
   const load = useCallback(async () => {
     if (!session?.token) return;
@@ -75,62 +76,89 @@ export function UploadBillsPage() {
   }
 
   return (
-    <div className="page">
+    <div className="page desk-page">
       <PageHeader
         title="Upload Bills"
-        subtitle="CSV: consumerNo, name, amount, amountAfterDueDate, dueDate (YYYY-MM-DD)"
+        subtitle="CSV for branch pay desk — consumerNo, name, amount, amountAfterDueDate, dueDate"
       />
       {error && <div className="alert alert-error">{error}</div>}
       {ok && <div className="alert alert-success">{ok}</div>}
 
-      <form className="panel form-grid" onSubmit={onSubmit}>
-        <div className="form-row">
-          <label>Bill file (CSV)</label>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            required
-          />
-        </div>
-        <p className="muted">
-          Example row: <code>3451375,Ali Khan,1500.00,1650.00,2026-11-30</code>
-        </p>
-        <button className="btn btn-primary" type="submit" disabled={loading || !file}>
-          {loading ? 'Uploading…' : 'Upload — Done'}
-        </button>
-      </form>
+      <div className="desk-split desk-split-wide">
+        <form className="desk-card desk-card-accent" onSubmit={onSubmit}>
+          <p className="desk-kicker">Import</p>
+          <h3 className="desk-card-title">Bill file (CSV)</h3>
+          <p className="muted desk-card-lead">
+            Branch staff will select company + consumer from this file. No wallet charge on upload.
+          </p>
 
-      <div className="panel" style={{ marginTop: '1.5rem' }}>
-        <h3 className="panel-title">Uploaded bills ({list.length})</h3>
-        {list.length === 0 ? (
-          <p className="muted">No bills uploaded yet.</p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Consumer No</th>
-                  <th>Name</th>
-                  <th>Amount</th>
-                  <th>After due</th>
-                  <th>Due date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((r) => (
-                  <tr key={r.publicId}>
-                    <td>{r.consumerNo}</td>
-                    <td>{r.consumerName}</td>
-                    <td>{r.amount}</td>
-                    <td>{r.amountAfterDueDate ?? '—'}</td>
-                    <td>{r.dueDate ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <label
+            className={`desk-dropzone${dragOver ? ' is-drag' : ''}${file ? ' has-file' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const f = e.dataTransfer.files?.[0];
+              if (f) setFile(f);
+            }}
+          >
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              required={!file}
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            <span className="desk-dropzone-title">
+              {file ? file.name : 'Drop CSV here or browse'}
+            </span>
+            <span className="muted">
+              Example: <code>3451375,Ali Khan,1500.00,1650.00,2026-11-30</code>
+            </span>
+          </label>
+
+          <button className="btn btn-primary desk-btn-block" type="submit" disabled={loading || !file}>
+            {loading ? 'Uploading…' : 'Upload bills'}
+          </button>
+        </form>
+
+        <div className="desk-card">
+          <div className="desk-list-head">
+            <div>
+              <p className="desk-kicker">Library</p>
+              <h3 className="desk-card-title">Uploaded bills</h3>
+            </div>
+            <span className="desk-count">{list.length}</span>
           </div>
-        )}
+          {list.length === 0 ? (
+            <p className="muted">No bills yet — upload a CSV to populate the branch pay list.</p>
+          ) : (
+            <div className="table-wrap desk-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Consumer</th>
+                    <th>Name</th>
+                    <th>Amount</th>
+                    <th>After due</th>
+                    <th>Due</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((r) => (
+                    <tr key={r.publicId}>
+                      <td><code>{r.consumerNo}</code></td>
+                      <td>{r.consumerName}</td>
+                      <td className="desk-amount">{Number(r.amount).toLocaleString()}</td>
+                      <td>{r.amountAfterDueDate != null ? Number(r.amountAfterDueDate).toLocaleString() : '—'}</td>
+                      <td>{r.dueDate ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

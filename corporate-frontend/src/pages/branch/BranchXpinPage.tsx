@@ -57,39 +57,64 @@ export function BranchXpinPage() {
   }
 
   return (
-    <div className="page">
-      <PageHeader title="Enter XPin" subtitle="Check XPin exists → show company info (no deduct)" />
+    <div className="page desk-page">
+      <PageHeader
+        title="Enter XPin"
+        subtitle="Confirm the visitor PIN — company info only, no funds deducted"
+      />
       {error && <div className="alert alert-error">{error}</div>}
 
-      <form className="panel form-grid" onSubmit={onSubmit}>
-        <div className="form-row">
-          <label>XPin</label>
-          <input value={xpin} onChange={(e) => setXpin(e.target.value)} required placeholder="6-digit PIN" />
-        </div>
-        <button className="btn btn-primary" type="submit" disabled={loading}>
-          {loading ? 'Checking…' : 'Check XPin'}
-        </button>
-      </form>
-
-      {result && (
-        <div className="panel" style={{ marginTop: '1.5rem' }}>
-          <h3 className="panel-title">Company info</h3>
-          <p className="muted">{result.message}</p>
-          <dl className="detail-list">
-            <dt>Company</dt><dd>{result.companyName}</dd>
-            <dt>NTN</dt><dd>{result.companyNtn || '—'}</dd>
-            <dt>Company email</dt><dd>{result.companyEmail}</dd>
-            <dt>Company phone</dt><dd>{result.companyPhone}</dd>
-            <dt>Person</dt><dd>{result.personName}</dd>
-            <dt>Person phone / email</dt><dd>{result.phone} / {result.email}</dd>
-            <dt>Amount</dt><dd>{result.amount}</dd>
-            <dt>Valid until</dt><dd>{new Date(result.validUntil).toLocaleString()}</dd>
-          </dl>
-          <button className="btn btn-primary" type="button" onClick={() => { setResult(null); setXpin(''); }}>
-            OK
+      <div className="desk-split">
+        <form className="desk-card desk-card-accent" onSubmit={onSubmit}>
+          <p className="desk-kicker">Verification</p>
+          <h3 className="desk-card-title">Visitor XPin</h3>
+          <p className="muted desk-card-lead">Enter the 6-digit code from the corporate email / SMS.</p>
+          <div className="form-row">
+            <label htmlFor="branch-xpin">XPin</label>
+            <input
+              id="branch-xpin"
+              className="desk-pin-input"
+              value={xpin}
+              onChange={(e) => setXpin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+              required
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="••••••"
+            />
+          </div>
+          <button className="btn btn-primary desk-btn-block" type="submit" disabled={loading || xpin.length < 4}>
+            {loading ? 'Checking…' : 'Check XPin'}
           </button>
-        </div>
-      )}
+          <Link className="desk-back-link" to="/branch">← Branch home</Link>
+        </form>
+
+        {result && (
+          <div className="desk-card desk-result-card">
+            <div className="desk-result-banner">
+              <span className="desk-status-dot" />
+              Valid · no deduct
+            </div>
+            <h3 className="desk-card-title">{result.companyName}</h3>
+            <p className="muted">{result.message}</p>
+            <dl className="desk-facts">
+              <div><dt>NTN</dt><dd>{result.companyNtn || '—'}</dd></div>
+              <div><dt>Company email</dt><dd>{result.companyEmail}</dd></div>
+              <div><dt>Company phone</dt><dd>{result.companyPhone}</dd></div>
+              <div><dt>Visitor</dt><dd>{result.personName}</dd></div>
+              <div><dt>Contact</dt><dd>{result.phone} · {result.email}</dd></div>
+              <div><dt>Amount</dt><dd className="desk-amount">{Number(result.amount).toLocaleString()}</dd></div>
+              <div><dt>Valid until</dt><dd>{new Date(result.validUntil).toLocaleString()}</dd></div>
+            </dl>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => { setResult(null); setXpin(''); }}
+            >
+              Done — next visitor
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

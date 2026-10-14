@@ -60,7 +60,7 @@ export function CorporateClientPage() {
           validityDays: Number(validityDays),
         }),
       });
-      setOk(`XPin ${created.pinCode} generated and sent to ${created.email} / ${created.phone}`);
+      setOk(`XPin ${created.pinCode} generated and sent to ${created.email}`);
       setName('');
       setPhone('');
       setEmail('');
@@ -84,67 +84,95 @@ export function CorporateClientPage() {
   }
 
   return (
-    <div className="page">
-      <PageHeader title="Corporate Client" subtitle="Generate XPin — sent to email / phone. Branch verifies; no auto deduct." />
+    <div className="page desk-page">
+      <PageHeader
+        title="Generate XPin"
+        subtitle="Issue a branch visit PIN — emailed to the visitor. Branch verifies; no auto deduct."
+      />
       {error && <div className="alert alert-error">{error}</div>}
       {ok && <div className="alert alert-success">{ok}</div>}
 
-      <form className="panel form-grid" onSubmit={onSubmit}>
-        <div className="form-row">
-          <label>Name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} required />
-        </div>
-        <div className="form-row">
-          <label>Phone</label>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} required />
-        </div>
-        <div className="form-row">
-          <label>Email</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </div>
-        <div className="form-row">
-          <label>Amount</label>
-          <input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} required />
-        </div>
-        <div className="form-row">
-          <label>Validity (days)</label>
-          <input type="number" min="1" max="365" value={validityDays} onChange={(e) => setValidityDays(e.target.value)} required />
-        </div>
-        <button className="btn btn-primary" type="submit" disabled={loading}>
-          {loading ? 'Generating…' : 'Generate'}
-        </button>
-      </form>
+      <div className="desk-split desk-split-wide">
+        <form className="desk-card desk-card-accent" onSubmit={onSubmit}>
+          <p className="desk-kicker">New PIN</p>
+          <h3 className="desk-card-title">Visitor details</h3>
+          <p className="muted desk-card-lead">PIN is emailed instantly for presentation at the branch counter.</p>
 
-      <div className="panel" style={{ marginTop: '1.5rem' }}>
-        <h3 className="panel-title">Recent XPins</h3>
-        {list.length === 0 ? (
-          <p className="muted">No XPins yet.</p>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>PIN</th>
-                  <th>Name</th>
-                  <th>Amount</th>
-                  <th>Valid until</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((r) => (
-                  <tr key={r.publicId}>
-                    <td><code>{r.pinCode}</code></td>
-                    <td>{r.name}</td>
-                    <td>{r.amount}</td>
-                    <td>{new Date(r.validUntil).toLocaleString()}</td>
-                    <td>{r.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="desk-form-grid">
+            <div className="form-row">
+              <label htmlFor="xpin-name">Name</label>
+              <input id="xpin-name" value={name} onChange={(e) => setName(e.target.value)} required />
+            </div>
+            <div className="form-row">
+              <label htmlFor="xpin-phone">Phone</label>
+              <input id="xpin-phone" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+            </div>
+            <div className="form-row desk-span-2">
+              <label htmlFor="xpin-email">Email</label>
+              <input id="xpin-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            </div>
+            <div className="form-row">
+              <label htmlFor="xpin-amount">Amount</label>
+              <input
+                id="xpin-amount"
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-row">
+              <label htmlFor="xpin-days">Validity (days)</label>
+              <input
+                id="xpin-days"
+                type="number"
+                min="1"
+                max="365"
+                value={validityDays}
+                onChange={(e) => setValidityDays(e.target.value)}
+                required
+              />
+            </div>
           </div>
-        )}
+
+          <button className="btn btn-primary desk-btn-block" type="submit" disabled={loading}>
+            {loading ? 'Generating…' : 'Generate & email XPin'}
+          </button>
+        </form>
+
+        <div className="desk-card">
+          <div className="desk-list-head">
+            <div>
+              <p className="desk-kicker">History</p>
+              <h3 className="desk-card-title">Recent XPins</h3>
+            </div>
+            <span className="desk-count">{list.length}</span>
+          </div>
+          {list.length === 0 ? (
+            <p className="muted">No XPins yet — generate one to get started.</p>
+          ) : (
+            <ul className="desk-list">
+              {list.map((r) => (
+                <li key={r.publicId} className="desk-list-item">
+                  <div>
+                    <code className="desk-pin-code">{r.pinCode}</code>
+                    <strong>{r.name}</strong>
+                    <span className="muted">{r.email}</span>
+                  </div>
+                  <div className="desk-list-meta">
+                    <span className="desk-amount">{Number(r.amount).toLocaleString()}</span>
+                    <span className={`desk-badge desk-badge-${r.status === 'ACTIVE' ? 'ok' : 'muted'}`}>
+                      {r.status}
+                    </span>
+                    <span className="muted">{new Date(r.validUntil).toLocaleDateString()}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   );

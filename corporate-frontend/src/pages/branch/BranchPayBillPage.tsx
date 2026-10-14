@@ -93,6 +93,8 @@ export function BranchPayBillPage() {
     void submitAction('PAY');
   }
 
+  const company = companies.find((c) => c.publicId === companyId);
+
   if (session?.role !== 'BRANCH_USER') {
     return (
       <div className="page">
@@ -103,62 +105,106 @@ export function BranchPayBillPage() {
   }
 
   return (
-    <div className="page">
-      <PageHeader title="Pay Bill" subtitle="Company from uploads · consumer from bill file · no wallet deduct" />
+    <div className="page desk-page">
+      <PageHeader
+        title="Pay Bill"
+        subtitle="Select company and consumer from uploaded bills — record pay / skip (no wallet deduct)"
+      />
       {error && <div className="alert alert-error">{error}</div>}
       {ok && <div className="alert alert-success">{ok}</div>}
 
-      <form className="panel form-grid" onSubmit={onSubmit}>
-        <div className="form-row">
-          <label>Company</label>
-          <select value={companyId} onChange={(e) => { setCompanyId(e.target.value); setConsumerNo(''); }} required>
-            <option value="">Select company…</option>
-            {companies.map((c) => (
-              <option key={c.publicId} value={c.publicId}>
-                {c.name} ({c.billCount} bills)
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="form-row">
-          <label>Consumer</label>
-          <input
-            list="consumer-list"
-            value={consumerNo}
-            onChange={(e) => setConsumerNo(e.target.value)}
-            placeholder="Consumer number from upload"
-            required
-          />
-          <datalist id="consumer-list">
-            {bills.map((b) => (
-              <option key={b.publicId} value={b.consumerNo}>
-                {b.consumerName}
-              </option>
-            ))}
-          </datalist>
-        </div>
+      <div className="desk-split">
+        <form className="desk-card" onSubmit={onSubmit}>
+          <p className="desk-kicker">Bill desk</p>
+          <h3 className="desk-card-title">Select & process</h3>
 
-        {selected && (
-          <div className="muted">
-            <div><strong>{selected.consumerName}</strong></div>
-            <div>Amount: {selected.amount}</div>
-            <div>After due: {selected.amountAfterDueDate ?? '—'}</div>
-            <div>Due: {selected.dueDate ?? '—'}</div>
+          <div className="form-row">
+            <label htmlFor="pay-company">Company</label>
+            <select
+              id="pay-company"
+              value={companyId}
+              onChange={(e) => { setCompanyId(e.target.value); setConsumerNo(''); }}
+              required
+            >
+              <option value="">Select company…</option>
+              {companies.map((c) => (
+                <option key={c.publicId} value={c.publicId}>
+                  {c.name} ({c.billCount} bills)
+                </option>
+              ))}
+            </select>
           </div>
-        )}
 
-        <div className="btn-row" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" type="submit" disabled={loading || !selected}>
-            Pay
-          </button>
-          <button className="btn btn-ghost" type="button" disabled={loading || !selected} onClick={() => void submitAction('SKIP')}>
-            Skip
-          </button>
-          <button className="btn btn-ghost" type="button" disabled={loading || !companyId} onClick={() => void submitAction('FINISH')}>
-            Finish
-          </button>
+          <div className="form-row">
+            <label htmlFor="pay-consumer">Consumer number</label>
+            <input
+              id="pay-consumer"
+              list="consumer-list"
+              value={consumerNo}
+              onChange={(e) => setConsumerNo(e.target.value)}
+              placeholder="From bill upload"
+              required
+              disabled={!companyId}
+            />
+            <datalist id="consumer-list">
+              {bills.map((b) => (
+                <option key={b.publicId} value={b.consumerNo}>
+                  {b.consumerName}
+                </option>
+              ))}
+            </datalist>
+          </div>
+
+          <div className="desk-actions">
+            <button className="btn btn-primary" type="submit" disabled={loading || !selected}>
+              {loading ? 'Working…' : 'Pay'}
+            </button>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              disabled={loading || !selected}
+              onClick={() => void submitAction('SKIP')}
+            >
+              Skip
+            </button>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              disabled={loading || !companyId}
+              onClick={() => void submitAction('FINISH')}
+            >
+              Finish
+            </button>
+          </div>
+          <Link className="desk-back-link" to="/branch">← Branch home</Link>
+        </form>
+
+        <div className="desk-card desk-preview-card">
+          <p className="desk-kicker">Preview</p>
+          {!companyId && (
+            <p className="muted desk-card-lead">Choose a company to load consumers from their bill file.</p>
+          )}
+          {companyId && !selected && (
+            <p className="muted desk-card-lead">
+              {company?.name} — {bills.length} consumer(s). Type or pick a consumer number.
+            </p>
+          )}
+          {selected && (
+            <>
+              <h3 className="desk-card-title">{selected.consumerName}</h3>
+              <dl className="desk-facts">
+                <div><dt>Consumer No</dt><dd>{selected.consumerNo}</dd></div>
+                <div><dt>Amount</dt><dd className="desk-amount">{Number(selected.amount).toLocaleString()}</dd></div>
+                <div><dt>After due</dt><dd>{selected.amountAfterDueDate != null ? Number(selected.amountAfterDueDate).toLocaleString() : '—'}</dd></div>
+                <div><dt>Due date</dt><dd>{selected.dueDate ?? '—'}</dd></div>
+                {company && (
+                  <div><dt>Company</dt><dd>{company.name}{company.ntn ? ` · ${company.ntn}` : ''}</dd></div>
+                )}
+              </dl>
+            </>
+          )}
         </div>
-      </form>
+      </div>
     </div>
   );
 }
