@@ -40,7 +40,8 @@ public class AgentStore {
 
     public PendingOtp createOtp(String mobile, String purpose) {
         String otpId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-        String pin = String.format("%06d", (int) (Math.random() * 1_000_000));
+        // Agent Android OTP fields are 4 digits (register + device verify)
+        String pin = String.format("%04d", (int) (Math.random() * 10_000));
         PendingOtp otp = new PendingOtp(otpId, pin, normalize(mobile), purpose,
                 Instant.now().plus(10, ChronoUnit.MINUTES));
         otps.put(otpId, otp);
