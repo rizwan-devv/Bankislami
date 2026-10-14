@@ -47,7 +47,8 @@ export function Layout() {
   const location = useLocation();
   const brand = useBrand();
   const opsMode = location.pathname.startsWith('/admin') && session?.role === 'PLATFORM_ADMIN';
-  const isMerchant = !!session && session.role !== 'PLATFORM_ADMIN';
+  const isBranch = session?.role === 'BRANCH_USER';
+  const isMerchant = !!session && session.role !== 'PLATFORM_ADMIN' && !isBranch;
   const isAdmin = session?.role === 'PLATFORM_ADMIN';
   const canStartOnboarding = !session;
   const designPreview = !session && isDesignPortalPath(location.pathname);
@@ -57,6 +58,7 @@ export function Layout() {
   if (
     session
     && session.role !== 'PLATFORM_ADMIN'
+    && session.role !== 'BRANCH_USER'
     && session.firstLogin
     && location.pathname !== '/change-password'
   ) {
@@ -78,7 +80,7 @@ export function Layout() {
       {portalMode ? (
         <div className="portal-frame">
           <aside className="portal-sidebar">
-            <Link to={isAdmin ? '/admin' : designPreview ? '/cards' : '/dashboard'} className="brand portal-brand">
+            <Link to={isAdmin ? '/admin' : isBranch ? '/branch' : designPreview ? '/cards' : '/dashboard'} className="brand portal-brand">
               <div className="brand-mark">
                 <span />
               </div>
@@ -121,6 +123,23 @@ export function Layout() {
                   Backoffice
                 </NavLink>
               )}
+              {isBranch && (
+                <>
+                  <p className="portal-nav-label">Branch</p>
+                  <NavLink to="/branch" className="portal-link" end>
+                    <span className="portal-link-icon">▣</span>
+                    Desk
+                  </NavLink>
+                  <NavLink to="/branch/xpin" className="portal-link">
+                    <span className="portal-link-icon">◇</span>
+                    Enter XPin
+                  </NavLink>
+                  <NavLink to="/branch/pay-bill" className="portal-link">
+                    <span className="portal-link-icon">⇄</span>
+                    Pay Bill
+                  </NavLink>
+                </>
+              )}
               {isMerchant && (
                 <>
                   <p className="portal-nav-label">Overview</p>
@@ -158,6 +177,15 @@ export function Layout() {
                         Physical card
                       </NavLink>
                       <TransfersNavGroup />
+                      <p className="portal-nav-label">Bills &amp; XPin</p>
+                      <NavLink to="/corporate-client" className="portal-link">
+                        <span className="portal-link-icon">◇</span>
+                        Corporate Client
+                      </NavLink>
+                      <NavLink to="/upload-bills" className="portal-link">
+                        <span className="portal-link-icon">☰</span>
+                        Upload Bills
+                      </NavLink>
                     </>
                   )}
                   {showMerchantOps && (

@@ -31,6 +31,11 @@ import { ApprovalsPage } from './pages/ApprovalsPage';
 import { EmployeeOnboardPage } from './pages/EmployeeOnboardPage';
 import { SignaturePage } from './pages/SignaturePage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
+import { CorporateClientPage } from './pages/CorporateClientPage';
+import { UploadBillsPage } from './pages/UploadBillsPage';
+import { BranchHomePage } from './pages/branch/BranchHomePage';
+import { BranchXpinPage } from './pages/branch/BranchXpinPage';
+import { BranchPayBillPage } from './pages/branch/BranchPayBillPage';
 import { ThemeProvider } from './theme/ThemeContext';
 
 export default function App() {
@@ -72,6 +77,11 @@ export default function App() {
               <Route path="/beneficiaries" element={<BeneficiariesPage />} />
               <Route path="/portal-users" element={<PortalUsersPage />} />
               <Route path="/approvals" element={<ApprovalsPage />} />
+              <Route path="/corporate-client" element={<CorporateClientPage />} />
+              <Route path="/upload-bills" element={<UploadBillsPage />} />
+              <Route path="/branch" element={<BranchHomePage />} />
+              <Route path="/branch/xpin" element={<BranchXpinPage />} />
+              <Route path="/branch/pay-bill" element={<BranchPayBillPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

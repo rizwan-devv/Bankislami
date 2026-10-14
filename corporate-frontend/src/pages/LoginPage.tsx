@@ -43,6 +43,8 @@ export function LoginPage() {
       });
       if (res.role === 'PLATFORM_ADMIN') {
         navigate('/admin');
+      } else if (res.role === 'BRANCH_USER') {
+        navigate('/branch');
       } else if (res.firstLogin) {
         navigate('/change-password');
       } else if (res.partyStatus === 'DRAFT' || res.partyStatus === 'REJECTED') {

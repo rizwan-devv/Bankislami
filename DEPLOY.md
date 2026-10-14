@@ -79,4 +79,6 @@ docker compose up -d --build
 - Backend needs `flyway-mysql` + `mysql-connector-j` (in `corporate-backend/pom.xml`).
 - Frontend nginx proxies `/api/` → `bankislami-backend:8091`.
 - Seeded admin after first start: `admin@dfscorporate.local` / `Admin@123`.
+- Seeded branch desk: `branch@bankislami.local` / `Branch@123` → `/branch` (XPin + Pay Bill; no wallet deduct).
+- Corporate (ACTIVE merchant): `/corporate-client` (XPin), `/upload-bills` (CSV).
 - Live agent transactions: set `DFS_PROXY_ENABLED=true` when ready.

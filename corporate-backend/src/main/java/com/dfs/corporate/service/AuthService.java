@@ -213,7 +213,11 @@ public class AuthService {
         Party party = partyRepository.findById(account.getPartyId())
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Party not found"));
 
-        if (account.getRole() != Role.PLATFORM_ADMIN) {
+        if (account.getRole() == Role.BRANCH_USER) {
+            if (account.getStatus() != AccountStatus.ACTIVE) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "Branch account is not active");
+            }
+        } else if (account.getRole() != Role.PLATFORM_ADMIN) {
             if (party.getStatus() == PartyStatus.DRAFT) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "Please complete onboarding first");
             }
@@ -233,8 +237,10 @@ public class AuthService {
         account.setLastLoginAt(Instant.now());
         accountRepository.save(account);
 
-        portalUserService.ensureOwnerRoles(account, party);
-        portalUserService.ensurePartnerPortalLogins(party);
+        if (account.getRole() == Role.PARTY_USER) {
+            portalUserService.ensureOwnerRoles(account, party);
+            portalUserService.ensurePartnerPortalLogins(party);
+        }
         var portalRoles = portalUserService.rolesOf(account.getId()).stream().map(Enum::name).toList();
 
         Map<String, Object> claims = new HashMap<>();
