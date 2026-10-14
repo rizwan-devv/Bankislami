@@ -219,14 +219,18 @@ public class TransactionGatewayService {
         return stubCashResult();
     }
 
-    /** Portal FT: mobileNumber + nidNo required. */
+    /** Portal FT: only fields DFS InitiateLocalFTRequest allows (no fromAccountNid). */
     private ApiEnvelope enrichFtEnvelope(String authorization, ApiEnvelope body) {
         AgentAccount agent = requireAgentWithCnic(authorization, body);
         ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
+        // Strip IBFT-only fields the app/proxy may have left on the payload
+        payload.remove("fromAccountNid");
+        payload.remove("fromAccountNo");
         putIfBlank(payload, "mobileNumber", agent.getMobile());
         String nid = normalizeNid(agent.getNidNo());
-        payload.put("nidNo", nid);
-        putIfBlank(payload, "fromAccountNid", nid);
+        if (nid != null && !nid.isBlank()) {
+            payload.put("nidNo", nid);
+        }
         return copyEnvelope(body, payload);
     }
 
