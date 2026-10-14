@@ -94,7 +94,11 @@ type Party = {
   docsPending?: number;
   docsRejected?: number;
   docsReadyForApprove?: boolean;
-  accountProvisionStatus?: string;
+  acknowledgmentSentAt?: string;
+  acknowledgmentExpiresAt?: string;
+  acknowledgedAt?: string;
+  customerAcknowledged?: boolean;
+  acknowledgmentPending?: boolean;  accountProvisionStatus?: string;
   dfsAccountId?: string;
   cmsRelationshipNum?: string;
   accountProvisionError?: string;
@@ -406,6 +410,27 @@ export function AdminPage() {
   function cnicPayload(): { cnicNumber?: string } {
     const digits = backOfficeCnic.replace(/\D/g, '');
     return digits.length >= 13 ? { cnicNumber: digits.slice(0, 13) } : {};
+  }
+
+  async function sendAcknowledgment(id: number) {
+    setError(''); setOk('');
+    try {
+      const res = await api<{
+        sent: boolean;
+        alreadyAcknowledged?: boolean;
+        email?: string;
+        message?: string;
+        party?: Party;
+      }>(`/api/admin/parties/${id}/send-acknowledgment`, {
+        method: 'POST',
+        token: session!.token,
+      });
+      if (res.party) setSelected(res.party);
+      setOk(res.message || (res.sent ? `Acknowledgment emailed to ${res.email}` : 'Acknowledgment status updated'));
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send acknowledgment');
+    }
   }
 
   async function approve(id: number) {
@@ -1751,7 +1776,25 @@ export function AdminPage() {
                     <span className={selected.sanctionsStatus === 'CLEAR' ? 'ok' : selected.sanctionsStatus === 'HIT' ? 'bad' : ''}>
                       Sanctions {selected.sanctionsStatus || '—'}
                     </span>
+                    <span className={selected.customerAcknowledged ? 'ok' : ''}>
+                      {selected.customerAcknowledged
+                        ? 'Customer acknowledged'
+                        : selected.acknowledgmentSentAt
+                          ? 'Awaiting customer ack'
+                          : 'Ack not sent'}
+                    </span>
                   </div>
+                )}
+                {selected.status === 'PENDING_APPROVAL' && !selected.customerAcknowledged && (
+                  <p className="muted">
+                    Send an acknowledgment email to <strong>{selected.email}</strong>. Approve stays locked until
+                    the account holder confirms the secure link.
+                  </p>
+                )}
+                {selected.status === 'PENDING_APPROVAL' && selected.customerAcknowledged && selected.acknowledgedAt && (
+                  <p className="muted">
+                    Customer acknowledged {new Date(selected.acknowledgedAt).toLocaleString()}. You may approve when docs and sanctions are clear.
+                  </p>
                 )}
                 {selected.status === 'SUBMITTED' && (
                   <p className="muted">Waiting on partner app KYC — you can still reject the full application.</p>
@@ -1789,11 +1832,27 @@ export function AdminPage() {
                 <button className="btn btn-ghost" type="button" onClick={() => void clearSanctions(selected.id)} disabled={selected.sanctionsStatus === 'CLEAR'}>
                   Clear sanctions
                 </button>
+                {selected.status === 'PENDING_APPROVAL' && !selected.customerAcknowledged && (
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    onClick={() => void sendAcknowledgment(selected.id)}
+                  >
+                    {selected.acknowledgmentSentAt ? 'Resend acknowledgment' : 'Send acknowledgment'}
+                  </button>
+                )}
                 {selected.status === 'PENDING_APPROVAL' && (
                   <button
                     className="btn btn-primary"
                     type="button"
-                    disabled={!selected.docsReadyForApprove}
+                    disabled={!selected.docsReadyForApprove || !selected.customerAcknowledged}
+                    title={
+                      !selected.customerAcknowledged
+                        ? 'Customer must acknowledge the emailed link before approve'
+                        : !selected.docsReadyForApprove
+                          ? 'Documents must be reviewed first'
+                          : undefined
+                    }
                     onClick={() => void approve(selected.id)}
                   >
                     Approve entity

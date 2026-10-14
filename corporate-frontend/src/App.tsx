@@ -36,6 +36,7 @@ import { UploadBillsPage } from './pages/UploadBillsPage';
 import { BranchHomePage } from './pages/branch/BranchHomePage';
 import { BranchXpinPage } from './pages/branch/BranchXpinPage';
 import { BranchPayBillPage } from './pages/branch/BranchPayBillPage';
+import { AcknowledgePage } from './pages/AcknowledgePage';
 import { ThemeProvider } from './theme/ThemeContext';
 
 export default function App() {
@@ -56,6 +57,7 @@ export default function App() {
               <Route path="/change-password" element={<ChangePasswordPage />} />
               <Route path="/onboarding" element={<OnboardingPage />} />
               <Route path="/partner-kyc/:token" element={<PartnerKycPage />} />
+              <Route path="/acknowledge/:token" element={<AcknowledgePage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/admin/review/:partyId" element={<AdminPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
