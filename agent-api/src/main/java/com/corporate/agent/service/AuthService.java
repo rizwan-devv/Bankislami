@@ -190,7 +190,11 @@ public class AuthService {
         data.put("accountStatusDescr", "Active");
         data.put("accountStatusId", 1);
         data.put("biometricallyVerified", "N");
-        data.put("qr", "");
+        // Same payload shape as generateQr — app shows this after login
+        String iban = agent.getIban() != null ? agent.getIban() : "";
+        data.put("qr", iban.isBlank()
+                ? "CAQR|" + agent.getMobile() + "|0"
+                : iban);
         data.put("iban", agent.getIban());
         data.put("nidNo", agent.getNidNo());
         data.put("appUserId", agent.getAppUserId());
