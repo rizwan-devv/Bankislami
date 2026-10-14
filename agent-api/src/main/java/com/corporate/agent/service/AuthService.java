@@ -68,12 +68,8 @@ public class AuthService {
             return ApiResponse.fail("401", "INVALID CREDENTIALS");
         }
 
-        // Always refresh CNIC into session (app FT/IBFT require it)
+        // Fill CNIC for app session (DFS often has nidNo=null; fallback = corporate party CNIC)
         identity.ensureCnic(agent);
-        if (!DfsAgentIdentityService.hasValidCnic(agent.getNidNo())) {
-            return ApiResponse.fail("409",
-                    "CNIC missing for this wallet — complete DFS accountDetails / re-approve with CNIC, then login again");
-        }
 
         String imei = envelope.getImieNo() != null ? envelope.getImieNo() : "";
         // New/unknown device → code 123 (Agent Android device-update flow)

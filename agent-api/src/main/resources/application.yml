@@ -19,6 +19,8 @@ agent:
   account-level-code: ${AGENT_ACCOUNT_LEVEL_CODE:L4}
   # When local user missing: if DFS wallet exists, create agent (no curl register)
   auto-provision-on-login: ${AGENT_AUTO_PROVISION:true}
+  # Corporate portal API — CNIC fallback when DFS accountDetails.nidNo is null
+  corporate-base-url: ${CORPORATE_BACKEND_URL:http://bankislami-backend:8091}
 
 # Transactions: app → this API → DFS → response back to app
 # Default mode=portal: X-Portal-Key + /v1/corporate/* (same as Bank Islami / DFS Corporate portal)

@@ -277,10 +277,7 @@ public class TransactionGatewayService {
     private AgentAccount requireAgentWithCnic(String authorization, ApiEnvelope envelope) {
         AgentAccount agent = requireAgent(authorization, envelope);
         identity.ensureCnic(agent);
-        if (!DfsAgentIdentityService.hasValidCnic(agent.getNidNo())) {
-            throw new WalletService.UnauthorizedException(
-                    "CNIC missing from login session — please login again");
-        }
+        // Soft: still send what we have; portal party CNIC should fill via corporate lookup
         return agent;
     }
 

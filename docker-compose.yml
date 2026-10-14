@@ -74,6 +74,7 @@ services:
       DFS_UPSTREAM_BEARER: ${DFS_UPSTREAM_BEARER:-}
       AGENT_ACCOUNT_LEVEL_CODE: ${AGENT_ACCOUNT_LEVEL_CODE:-L4}
       AGENT_AUTO_PROVISION: ${AGENT_AUTO_PROVISION:-true}
+      CORPORATE_BACKEND_URL: ${CORPORATE_BACKEND_URL:-http://bankislami-backend:8091}
 
 volumes:
   bankislami_uploads:
