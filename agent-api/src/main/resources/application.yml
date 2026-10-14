@@ -13,18 +13,22 @@ app:
     expiry-hours: ${JWT_EXPIRY_HOURS:24}
 
 # Auth & registration are always managed HERE (not DFS).
-# Wallet can be local (stub) or later wired to your ledger.
 agent:
   wallet-mode: ${AGENT_WALLET_MODE:local}   # local | dfs-proxy
 
 # Transactions: app → this API → DFS → response back to app
+# Default mode=portal: X-Portal-Key + /v1/corporate/* (same as Bank Islami / DFS Corporate portal)
 dfs:
   proxy:
-    enabled: ${DFS_PROXY_ENABLED:false}     # false = stub txn responses; true = forward to DFS
+    enabled: ${DFS_PROXY_ENABLED:false}
+    mode: ${DFS_PROXY_MODE:portal}          # portal | bearer
+  portal-key: ${CORPORATE_PORTAL_API_KEY:}
+  channel: ${DFS_PORTAL_API_CHANNEL:COP}
   agent-base-url: ${DFS_AGENT_BASE_URL:http://46.225.160.93:18001}
   txn-base-url: ${DFS_TXN_BASE_URL:http://46.225.160.93:18009}
+  # Corporate portal txn base (with /transactions). Falls back to txn-base-url + /transactions
+  portal-txn-base-url: ${DFS_TXN_API_BASE_URL:http://46.225.160.93:18009/transactions}
   third-party-base-url: ${DFS_THIRD_PARTY_BASE_URL:http://46.225.160.93:18008}
-  # Optional: if DFS requires a bearer for server-to-server; otherwise we forward client Authorization
   upstream-bearer: ${DFS_UPSTREAM_BEARER:}
   connect-timeout-ms: 15000
   read-timeout-ms: 45000

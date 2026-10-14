@@ -14,7 +14,8 @@ import java.util.UUID;
 
 /**
  * Transactions: App → this service → DFS (when proxy enabled) → App.
- * When proxy disabled, returns deterministic stubs so the Android app can proceed.
+ * Portal mode: X-Portal-Key + /v1/corporate/* (same as Corporate portal).
+ * When proxy disabled, returns deterministic stubs.
  */
 @Service
 public class TransactionGatewayService {
@@ -27,6 +28,10 @@ public class TransactionGatewayService {
 
     public Map<String, Object> getAllBanks(String authorization) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                // Portal: POST /v1/corporate/ibft/bankList (not GET getAllBank)
+                return dfs.postCorporateEmpty("/v1/corporate/ibft/bankList");
+            }
             return dfs.getTxn("/transactions/v1/getAllBank", authorization);
         }
         List<Map<String, String>> banks = List.of(
@@ -39,6 +44,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> getBillers(String authorization) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return dfs.getCorporate("/v1/corporate/getbiller");
+            }
             return dfs.getTxn("/transactions/v1/getbiller", authorization);
         }
         List<Map<String, String>> billers = List.of(
@@ -50,6 +58,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> ibftTitleFetch(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return dfs.postCorporate("/v1/corporate/ibft/titleFetch", body);
+            }
             return dfs.postTxn("/transactions/v1/ibft/titleFetch", body, authorization);
         }
         JsonNode p = body.getPayload();
@@ -69,6 +80,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> ibftAdvice(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return dfs.postCorporate("/v1/corporate/ibft/advice", body);
+            }
             return dfs.postTxn("/transactions/v1/ibft/advice", body, authorization);
         }
         return stubTxnResult("IBFT");
@@ -76,6 +90,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> billInquiry(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return dfs.postCorporate("/v1/corporate/billInquiry", body);
+            }
             return dfs.postTxn("/transactions/v1/billInquiry", body, authorization);
         }
         JsonNode p = body.getPayload();
@@ -97,6 +114,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> billPayment(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return dfs.postCorporate("/v1/corporate/billPayment", body);
+            }
             return dfs.postTxn("/transactions/v1/billPayment", body, authorization);
         }
         return stubTxnResult("BILL");
@@ -104,6 +124,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> initiateLocalFt(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return dfs.postCorporate("/v1/corporate/initiateLocalFT", body);
+            }
             return dfs.postTxn("/transactions/v1/initiateLocalFT", body, authorization);
         }
         JsonNode p = body.getPayload();
@@ -122,6 +145,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> fundsTransferLocal(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return dfs.postCorporate("/v1/corporate/fundsTransferLocal", body);
+            }
             return dfs.postTxn("/transactions/v1/fundsTransferLocal", body, authorization);
         }
         return stubTxnResult("W2W");
@@ -129,6 +155,10 @@ public class TransactionGatewayService {
 
     public Map<String, Object> cashInInquiry(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            // No corporate portal equivalent — keep agent path / stub
+            if (dfs.isPortalMode()) {
+                return ApiResponse.fail("501", "Cash-in inquiry not available in portal proxy mode");
+            }
             return dfs.postAgent("/agentapp/v1/customer/cashInInquiry", body, authorization);
         }
         JsonNode p = body.getPayload();
@@ -141,6 +171,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> internalCashIn(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return ApiResponse.fail("501", "Cash-in not available in portal proxy mode");
+            }
             return dfs.postTxn("/transactions/v1/internalcashin", body, authorization);
         }
         return stubCashResult();
@@ -148,6 +181,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> generateCashOutOtp(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return ApiResponse.fail("501", "Cash-out OTP not available in portal proxy mode");
+            }
             return dfs.postThirdParty("/thirdparties/genrateOtp", body, authorization);
         }
         Map<String, Object> data = new LinkedHashMap<>();
@@ -161,6 +197,9 @@ public class TransactionGatewayService {
 
     public Map<String, Object> internalCashOut(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
+            if (dfs.isPortalMode()) {
+                return ApiResponse.fail("501", "Cash-out not available in portal proxy mode");
+            }
             return dfs.postTxn("/transactions/v1/internalcashout", body, authorization);
         }
         return stubCashResult();

@@ -81,4 +81,6 @@ docker compose up -d --build
 - Seeded admin after first start: `admin@dfscorporate.local` / `Admin@123`.
 - Seeded branch desk: `branch@bankislami.local` / `Branch@123` → `/branch` (XPin + Pay Bill; no wallet deduct).
 - Corporate (ACTIVE merchant): `/corporate-client` (XPin), `/upload-bills` (CSV).
-- Live agent transactions: set `DFS_PROXY_ENABLED=true` when ready.
+- Live agent FT/IBFT (portal-style): `DFS_PROXY_ENABLED=true`, `DFS_PROXY_MODE=portal`,
+  and the same `CORPORATE_PORTAL_API_KEY` as the corporate portal (`X-Portal-Key` → `/v1/corporate/*`).
+- Stub agent FT/IBFT: `DFS_PROXY_ENABLED=false`.

@@ -53,17 +53,23 @@ DFS_THIRD_PARTY_BASE_URL= http://<your-deploy-host>:8092/
 DFS_CARD_BASE_URL       = http://<your-deploy-host>:8092/   # card stubs not yet
 ```
 
-On deploy set:
+On deploy set (recommended — same auth as Corporate portal):
 
 ```powershell
 $env:PUBLIC_BASE_URL="https://your-domain.example"
-$env:DFS_PROXY_ENABLED="true"   # forward transactions to real DFS
+$env:DFS_PROXY_ENABLED="true"
+$env:DFS_PROXY_MODE="portal"
+$env:CORPORATE_PORTAL_API_KEY="<same key as portal>"
+$env:DFS_PORTAL_API_CHANNEL="COP"
+$env:DFS_TXN_API_BASE_URL="http://46.225.160.93:18009/transactions"
 $env:DFS_AGENT_BASE_URL="http://46.225.160.93:18001"
 $env:DFS_TXN_BASE_URL="http://46.225.160.93:18009"
 $env:DFS_THIRD_PARTY_BASE_URL="http://46.225.160.93:18008"
-# Optional if DFS needs a fixed bearer instead of the app token:
-# $env:DFS_UPSTREAM_BEARER="..."
 ```
+
+App keeps calling `/transactions/v1/*` on this API; we map to DFS `/v1/corporate/*` + `X-Portal-Key`.
+
+Legacy bearer mode (DFS agent JWT): `DFS_PROXY_MODE=bearer` and optional `DFS_UPSTREAM_BEARER`.
 
 ## Implemented endpoints
 
