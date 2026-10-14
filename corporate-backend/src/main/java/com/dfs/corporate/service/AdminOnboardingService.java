@@ -378,14 +378,10 @@ public class AdminOnboardingService {
         Party party = partyRepository.findById(doc.getPartyId())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Party not found"));
 
-        // Doc reject does NOT reject the whole client — system marks INCOMPLETE for re-upload
-        if (!approve) {
-            if (party.getStatus() == PartyStatus.SUBMITTED
-                    || party.getStatus() == PartyStatus.PENDING_APPROVAL
-                    || party.getStatus() == PartyStatus.INCOMPLETE) {
-                party.setStatus(PartyStatus.INCOMPLETE);
-                partyRepository.save(party);
-            }
+        // Recompute from active required/one-of catalog — hidden & optional rejects do not force INCOMPLETE.
+        boolean affectsIncomplete = !approve && partyStatusSyncService.countsTowardIncomplete(party, doc.getDocumentCode());
+        partyStatusSyncService.syncAfterDocumentChange(party.getId());
+        if (affectsIncomplete) {
             mailService.send(party.getEmail(), "PayFast Corporate — Document needs re-upload",
                     "Hello " + party.getFullName() + ",\n\n"
                             + "Document \"" + doc.getDocumentCode() + "\" was rejected by backoffice.\n"
@@ -394,8 +390,6 @@ public class AdminOnboardingService {
                             + "(change it on first login if you have not yet).\n"
                             + "Open My Application and re-upload only this document. Your full application was not rejected.\n\n"
                             + "— PayFast Corporate");
-        } else {
-            partyStatusSyncService.syncAfterDocumentChange(party.getId());
         }
         return enrich(partyRepository.findById(party.getId()).orElse(party));
     }

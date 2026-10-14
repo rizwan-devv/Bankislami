@@ -257,9 +257,12 @@ export function DashboardPage() {
           missing: mandatoryDocs.filter((d) => !d.uploaded),
         }
       : null;
+  const checklistCodes = new Set((party?.requiredDocuments || []).map((d) => d.documentCode));
   const rejectedDocs =
     status === 'INCOMPLETE' || status === 'SUBMITTED' || status === 'PENDING_APPROVAL'
-      ? (party?.documents || []).filter((d) => d.status === 'REJECTED')
+      ? (party?.documents || []).filter(
+          (d) => d.status === 'REJECTED' && checklistCodes.has(d.documentCode),
+        )
       : [];
 
   useEffect(() => {

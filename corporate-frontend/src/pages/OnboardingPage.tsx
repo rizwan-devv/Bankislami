@@ -278,7 +278,11 @@ export function OnboardingPage() {
   }
 
   const editable = party?.status === 'DRAFT' || party?.status === 'REJECTED';
-  const rejectedDocs = (party?.documents || []).filter((d) => d.status === 'REJECTED');
+  // Active checklist only — hidden catalog docs are omitted from requiredDocuments and from INCOMPLETE.
+  const checklistCodes = new Set((party?.requiredDocuments || []).map((d) => d.documentCode));
+  const rejectedDocs = (party?.documents || []).filter(
+    (d) => d.status === 'REJECTED' && checklistCodes.has(d.documentCode),
+  );
   const canReupload = party?.status === 'INCOMPLETE'
     || party?.status === 'SUBMITTED'
     || party?.status === 'PENDING_APPROVAL'
@@ -318,8 +322,11 @@ export function OnboardingPage() {
       <div className="container">
         <div className="steps">
           {stepLabels.map((label, i) => {
-            const stepNum = partnerMode ? i + 1 : (i === 0 ? 1 : i + 2);
-            const active = partnerMode ? step >= i + 1 : (i === 0 ? step >= 1 : step >= i + 2);
+            // Display 1…N for visible steps; internal step still skips Partners when hidden.
+            const stepNum = i + 1;
+            const active = partnerMode
+              ? step >= i + 1
+              : (i === 0 ? step >= 1 : i === 1 ? step >= 3 : step >= 4);
             return (
               <span key={label} className={`step-pill ${active ? 'active' : ''}`}>
                 {stepNum}. {label}

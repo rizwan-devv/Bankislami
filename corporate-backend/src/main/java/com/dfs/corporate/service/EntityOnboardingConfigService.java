@@ -146,6 +146,27 @@ public class EntityOnboardingConfigService {
         return reg + ". " + onb;
     }
 
+    /**
+     * Active REQUIRED / ONE_OF catalog codes count toward INCOMPLETE.
+     * Hidden (active=false) and OPTIONAL docs do not.
+     */
+    public boolean countsTowardIncomplete(CorporateEntityType entityType,
+                                          boolean partnershipUnregistered,
+                                          String documentCode) {
+        if (entityType == null || documentCode == null || documentCode.isBlank()) {
+            return false;
+        }
+        String code = documentCode.trim().toUpperCase(Locale.ROOT);
+        for (DocumentPhase phase : List.of(DocumentPhase.REGISTRATION, DocumentPhase.ONBOARDING)) {
+            for (EntityOnboardingDocument row : activeRows(entityType, phase, partnershipUnregistered)) {
+                if (!code.equals(row.getDocumentCode())) continue;
+                String req = row.getRequirement();
+                return "REQUIRED".equals(req) || "ONE_OF".equals(req);
+            }
+        }
+        return false;
+    }
+
     public List<Map<String, Object>> list(String entityType, String phaseRaw) {
         return list(entityType, phaseRaw, false);
     }

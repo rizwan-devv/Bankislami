@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 /**
  * Keeps party status in sync with document completeness after submit.
  * <ul>
- *   <li>INCOMPLETE — required docs missing or any document REJECTED (re-upload only; not full reject)</li>
+ *   <li>INCOMPLETE — required / one-of docs missing or rejected (hidden and optional catalog docs do not count)</li>
  *   <li>SUBMITTED — docs OK, identity KYC still required and not yet done by anyone</li>
  *   <li>PENDING_APPROVAL — docs OK, and KYC is off for this entity or one person / back office has completed it</li>
  * </ul>
@@ -29,19 +29,22 @@ public class PartyStatusSyncService {
     private final PartnerAppUserRepository appUserRepository;
     private final SanctionsScreeningService sanctionsScreeningService;
     private final EntityKycPolicyService entityKycPolicyService;
+    private final EntityOnboardingConfigService entityOnboardingConfigService;
 
     public PartyStatusSyncService(PartyRepository partyRepository,
                                   PartyDocumentRepository documentRepository,
                                   AssociatedPersonRepository associatedPersonRepository,
                                   PartnerAppUserRepository appUserRepository,
                                   SanctionsScreeningService sanctionsScreeningService,
-                                  EntityKycPolicyService entityKycPolicyService) {
+                                  EntityKycPolicyService entityKycPolicyService,
+                                  EntityOnboardingConfigService entityOnboardingConfigService) {
         this.partyRepository = partyRepository;
         this.documentRepository = documentRepository;
         this.associatedPersonRepository = associatedPersonRepository;
         this.appUserRepository = appUserRepository;
         this.sanctionsScreeningService = sanctionsScreeningService;
         this.entityKycPolicyService = entityKycPolicyService;
+        this.entityOnboardingConfigService = entityOnboardingConfigService;
     }
 
     /**
@@ -89,9 +92,6 @@ public class PartyStatusSyncService {
 
     public boolean hasRejectedOrMissingDocs(Party party) {
         List<PartyDocument> docs = documentRepository.findByPartyIdOrderByUploadedAtDesc(party.getId());
-        if (docs.stream().anyMatch(d -> d.getStatus() == DocumentStatus.REJECTED)) {
-            return true;
-        }
         Set<String> uploadedOk = docs.stream()
                 .filter(d -> d.getStatus() != DocumentStatus.REJECTED)
                 .map(PartyDocument::getDocumentCode)
@@ -102,10 +102,23 @@ public class PartyStatusSyncService {
         }
 
         boolean unreg = Boolean.TRUE.equals(party.getPartnershipUnregistered());
-        Set<String> mandatory = ConsolidatedKycRules.mandatoryDocuments(
-                party.getPartyType(), party.getEntityType(), unreg);
-        for (String code : mandatory) {
-            if (!uploadedOk.contains(code)) {
+
+        // Align with submit / checklist: hidden (active=false) and OPTIONAL docs never force INCOMPLETE.
+        // Rejected required/one-of rows simply leave that code out of uploadedOk.
+        if (party.getPartyType() != PartyType.SUB_MERCHANT
+                && entityOnboardingConfigService.hasCatalog(party.getEntityType())) {
+            if (entityOnboardingConfigService.submissionGap(party.getEntityType(), unreg, uploadedOk) != null) {
+                return true;
+            }
+        } else {
+            Set<String> mandatory = ConsolidatedKycRules.mandatoryDocuments(
+                    party.getPartyType(), party.getEntityType(), unreg);
+            for (String code : mandatory) {
+                if (!uploadedOk.contains(code)) {
+                    return true;
+                }
+            }
+            if (ConsolidatedKycRules.oneOfGap(party.getEntityType(), uploadedOk) != null) {
                 return true;
             }
         }
@@ -128,10 +141,38 @@ public class PartyStatusSyncService {
             }
         }
 
-        if (ConsolidatedKycRules.oneOfGap(party.getEntityType(), uploadedOk) != null) {
+        return false;
+    }
+
+    /** True when rejecting this code should drive INCOMPLETE / customer re-upload mail. */
+    public boolean countsTowardIncomplete(Party party, String documentCode) {
+        if (party == null || documentCode == null || documentCode.isBlank()) {
+            return false;
+        }
+        String code = documentCode.trim();
+        boolean unreg = Boolean.TRUE.equals(party.getPartnershipUnregistered());
+        if (party.getPartyType() != PartyType.SUB_MERCHANT
+                && entityOnboardingConfigService.hasCatalog(party.getEntityType())) {
+            return entityOnboardingConfigService.countsTowardIncomplete(party.getEntityType(), unreg, code);
+        }
+        Set<String> mandatory = ConsolidatedKycRules.mandatoryDocuments(
+                party.getPartyType(), party.getEntityType(), unreg);
+        if (mandatory.contains(code)) {
             return true;
         }
-
+        if (ConsolidatedKycRules.oneOfCodes(party.getEntityType()).contains(code)) {
+            return true;
+        }
+        if (ConsolidatedKycRules.needsPartnerRoster(party.getEntityType())) {
+            for (AssociatedPerson p : associatedPersonRepository.findByPartyIdOrderByIdAsc(party.getId())) {
+                if (p.getRoleType() != AssociatedPersonRole.PARTNER) continue;
+                if (code.equals(ConsolidatedKycRules.partnerCnicFront(p.getId()))
+                        || code.equals(ConsolidatedKycRules.partnerCnicBack(p.getId()))
+                        || code.equals(ConsolidatedKycRules.partnerAgreement(p.getId()))) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 
