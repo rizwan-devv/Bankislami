@@ -220,53 +220,76 @@ public class TransactionGatewayService {
     }
 
     /**
-     * Portal FT: only fields DFS InitiateLocalFTRequest allows.
-     * Never requires AgentStore / JWT — app payload already has mobileNumber + nidNo (as before).
+     * Same shape as Corporate portal LiveTransferService.ftInitiate / fundsTransferLocal.
+     * DFS InitiateLocalFTRequest: accountType, amount, nidNo, mobileNumber, accountNo, type (+ confirm extras).
      */
     private ApiEnvelope enrichFtEnvelope(String authorization, ApiEnvelope body) {
-        ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
-        // Strip IBFT-only fields — DFS rejects unknown fromAccountNid on local FT
-        payload.remove("fromAccountNid");
-        payload.remove("fromAccountNo");
+        ObjectNode src = dfs.copyPayload(body != null ? body.getPayload() : null);
+        WalletIds ids = resolveWalletIds(authorization, body, src);
 
-        WalletIds ids = resolveWalletIds(authorization, body, payload);
-        putIfBlank(payload, "mobileNumber", ids.mobile);
-        if (!ids.nid.isBlank()) {
-            putIfBlank(payload, "nidNo", ids.nid);
-        }
+        ObjectNode payload = dfs.mapper().createObjectNode();
+        putCopy(payload, src, "accountNo");
+        putCopy(payload, src, "accountType");
+        putCopy(payload, src, "amount");
+        putCopy(payload, src, "type");
+        putCopy(payload, src, "mpin");
+        putCopy(payload, src, "transPurposeId");
+        putCopy(payload, src, "narration");
+        putCopy(payload, src, "authIdResponse");
+
+        if (!ids.mobile.isBlank()) payload.put("mobileNumber", ids.mobile);
+        else putCopy(payload, src, "mobileNumber");
+        if (!ids.nid.isBlank()) payload.put("nidNo", ids.nid);
+        else putCopy(payload, src, "nidNo");
+
         return copyEnvelope(body, payload);
     }
 
     /**
-     * IBFT: inject fromAccountNo / fromAccountNid when missing.
-     * Never 401 for missing in-memory session — use payload + corporate CNIC fallback.
+     * Same shape as Corporate portal LiveTransferService.ibftTitleFetch / ibftAdvice.
+     * DFS OutgoingIbftRequest: fromAccountNo, fromAccountNid, beneficiaryAccountNo,
+     * beneficiaryBankImd, amount, purposeOfPayment, transactionReference — nothing else.
      */
     private ApiEnvelope enrichIbftEnvelope(String authorization, ApiEnvelope body, boolean forAdvice) {
-        ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
-        WalletIds ids = resolveWalletIds(authorization, body, payload);
+        ObjectNode src = dfs.copyPayload(body != null ? body.getPayload() : null);
+        WalletIds ids = resolveWalletIds(authorization, body, src);
 
-        putIfBlank(payload, "fromAccountNo", ids.mobile);
-        putIfBlank(payload, "mobileNumber", ids.mobile);
-        if (!ids.nid.isBlank()) {
-            putIfBlank(payload, "fromAccountNid", ids.nid);
-            putIfBlank(payload, "nidNo", ids.nid);
-        }
+        String beneficiaryAccount = firstNonBlank(
+                text(src, "beneficiaryAccountNo"),
+                text(src, "accountNo"),
+                text(src, "toAccountNo"),
+                text(src, "iban"));
+        String bankImd = firstNonBlank(
+                text(src, "beneficiaryBankImd"),
+                text(src, "bankImd"),
+                text(src, "imd"),
+                text(src, "beneficiaryBankCode"),
+                text(src, "bankCode"));
 
-        copyFirstAlias(payload, "beneficiaryAccountNo",
-                "accountNo", "toAccountNo", "iban", "beneficiaryIban");
-        copyFirstAlias(payload, "beneficiaryBankImd",
-                "bankImd", "imd", "beneficiaryBankCode", "bankCode");
+        ObjectNode payload = dfs.mapper().createObjectNode();
+        payload.put("fromAccountNo", !ids.mobile.isBlank() ? ids.mobile : text(src, "fromAccountNo"));
+        payload.put("fromAccountNid", !ids.nid.isBlank() ? ids.nid : normalizeNid(text(src, "fromAccountNid")));
+        if (!beneficiaryAccount.isBlank()) payload.put("beneficiaryAccountNo", beneficiaryAccount);
+        if (!bankImd.isBlank()) payload.put("beneficiaryBankImd", bankImd);
+        putCopy(payload, src, "amount");
 
         if (forAdvice) {
             String purpose = firstNonBlank(
-                    text(payload, "purposeOfPayment"),
-                    text(payload, "purpose"),
-                    text(payload, "purposeOfTxn"),
+                    text(src, "purposeOfPayment"),
+                    text(src, "purpose"),
+                    text(src, "purposeOfTxn"),
                     "Transfer");
             payload.put("purposeOfPayment", purpose);
+            String xref = text(src, "transactionReference");
+            payload.put("transactionReference", xref);
         }
 
         return copyEnvelope(body, payload);
+    }
+
+    private static void putCopy(ObjectNode dest, ObjectNode src, String field) {
+        String v = text(src, field);
+        if (!v.isBlank()) dest.put(field, v);
     }
 
     /**
@@ -336,25 +359,6 @@ public class TransactionGatewayService {
         String d = digitsOnly(raw);
         if (d == null) return "";
         return d.length() > 13 ? d.substring(0, 13) : d;
-    }
-
-    private static void putIfBlank(ObjectNode payload, String field, String value) {
-        if (value == null || value.isBlank()) return;
-        String existing = text(payload, field);
-        if (existing.isBlank()) {
-            payload.put(field, value);
-        }
-    }
-
-    private static void copyFirstAlias(ObjectNode payload, String target, String... aliases) {
-        if (!text(payload, target).isBlank()) return;
-        for (String a : aliases) {
-            String v = text(payload, a);
-            if (!v.isBlank()) {
-                payload.put(target, v);
-                return;
-            }
-        }
     }
 
     private static String firstNonBlank(String... values) {
