@@ -29,12 +29,16 @@ type Invite = {
   authorizedToOperate?: boolean;
 };
 type DocPhase = 'REGISTRATION' | 'ONBOARDING';
+type DocRule = 'REQUIRED' | 'OPTIONAL' | 'ONE_OF';
 type CatalogDoc = {
   id: number;
   documentCode: string;
   documentLabel: string;
   mandatory: boolean;
-  requirement: string;
+  requirement: DocRule | string;
+  oneOfGroup?: number;
+  active?: boolean;
+  hidden?: boolean;
   custom: boolean;
   phase?: DocPhase;
 };
@@ -218,7 +222,7 @@ export function AdminPage() {
   const [docCounts, setDocCounts] = useState<Record<string, { registration: number; onboarding: number }>>({});
   const [editingDocId, setEditingDocId] = useState<number | null>(null);
   const [newDocLabel, setNewDocLabel] = useState('');
-  const [newDocRequired, setNewDocRequired] = useState(true);
+  const [newDocRule, setNewDocRule] = useState<DocRule>('REQUIRED');
   const [virtualOrders, setVirtualOrders] = useState<{
     id: number;
     businessName?: string;
@@ -289,10 +293,12 @@ export function AdminPage() {
     Promise.all(
       kycPolicies.map(async (row) => {
         const [reg, onb] = await Promise.all([
-          api<CatalogDoc[]>(`/api/admin/entity-documents/${row.entityType}?phase=REGISTRATION`, { token }),
-          api<CatalogDoc[]>(`/api/admin/entity-documents/${row.entityType}?phase=ONBOARDING`, { token }),
+          api<CatalogDoc[]>(`/api/admin/entity-documents/${row.entityType}?phase=REGISTRATION&includeHidden=true`, { token }),
+          api<CatalogDoc[]>(`/api/admin/entity-documents/${row.entityType}?phase=ONBOARDING&includeHidden=true`, { token }),
         ]);
-        return [row.entityType, { registration: reg.length, onboarding: onb.length }] as const;
+        const visible = (rows: CatalogDoc[]) =>
+          rows.filter((r) => r.active !== false && !r.hidden).length;
+        return [row.entityType, { registration: visible(reg), onboarding: visible(onb) }] as const;
       }),
     )
       .then((pairs) => {
@@ -651,23 +657,28 @@ export function AdminPage() {
     setDocPhase(phase);
     try {
       const rows = await api<CatalogDoc[]>(
-        `/api/admin/entity-documents/${entityType}?phase=${phase}`,
+        `/api/admin/entity-documents/${entityType}?phase=${phase}&includeHidden=true`,
         { token: session!.token },
       );
       setCatalogDocs(rows);
+      const visible = rows.filter((r) => r.active !== false && !r.hidden).length;
       setDocCounts((prev) => {
         const cur = prev[entityType] || { registration: 0, onboarding: 0 };
         return {
           ...prev,
           [entityType]:
             phase === 'REGISTRATION'
-              ? { ...cur, registration: rows.length }
-              : { ...cur, onboarding: rows.length },
+              ? { ...cur, registration: visible }
+              : { ...cur, onboarding: visible },
         };
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load documents');
     }
+  }
+
+  function patchDoc(id: number, patch: Partial<CatalogDoc>) {
+    setCatalogDocs((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
   async function saveDoc(row: CatalogDoc) {
@@ -677,11 +688,30 @@ export function AdminPage() {
       const saved = await api<CatalogDoc>(`/api/admin/entity-documents/${row.id}`, {
         method: 'PUT',
         token: session!.token,
-        body: JSON.stringify({ documentLabel: row.documentLabel, mandatory: row.mandatory }),
+        body: JSON.stringify({
+          documentLabel: row.documentLabel,
+          requirement: row.requirement,
+          oneOfGroup: row.requirement === 'ONE_OF' ? (row.oneOfGroup || 1) : 0,
+          active: row.active !== false && !row.hidden,
+        }),
       });
       setCatalogDocs((rows) => rows.map((r) => (r.id === saved.id ? saved : r)));
       setEditingDocId(null);
-      setOk(`Document saved on the ${docPhase === 'REGISTRATION' ? 'registration' : 'onboarding'} list.`);
+      setOk('Document rule saved. Applicants see this on the next load.');
+      if (docEntity) {
+        const next = catalogDocs.map((r) => (r.id === saved.id ? saved : r));
+        const visible = next.filter((r) => r.active !== false && !r.hidden).length;
+        setDocCounts((prev) => {
+          const cur = prev[docEntity] || { registration: 0, onboarding: 0 };
+          return {
+            ...prev,
+            [docEntity]:
+              docPhase === 'REGISTRATION'
+                ? { ...cur, registration: visible }
+                : { ...cur, onboarding: visible },
+          };
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save document');
     }
@@ -699,55 +729,78 @@ export function AdminPage() {
           entityType: docEntity,
           phase: docPhase,
           documentLabel: newDocLabel,
-          mandatory: newDocRequired,
+          requirement: newDocRule,
         }),
       });
-      setCatalogDocs((rows) => {
-        const next = [...rows, saved];
-        setDocCounts((prev) => {
-          const cur = prev[docEntity] || { registration: 0, onboarding: 0 };
-          return {
-            ...prev,
-            [docEntity]:
-              docPhase === 'REGISTRATION'
-                ? { ...cur, registration: next.length }
-                : { ...cur, onboarding: next.length },
-          };
-        });
-        return next;
+      setCatalogDocs((rows) => [...rows, saved]);
+      setDocCounts((prev) => {
+        const cur = prev[docEntity] || { registration: 0, onboarding: 0 };
+        const n = (docPhase === 'REGISTRATION' ? cur.registration : cur.onboarding) + 1;
+        return {
+          ...prev,
+          [docEntity]:
+            docPhase === 'REGISTRATION'
+              ? { ...cur, registration: n }
+              : { ...cur, onboarding: n },
+        };
       });
       setNewDocLabel('');
-      setNewDocRequired(true);
-      setOk(`Document added to ${docPhase === 'REGISTRATION' ? 'registration' : 'onboarding'} for this entity.`);
+      setNewDocRule('REQUIRED');
+      setOk(`Document added (${newDocRule === 'REQUIRED' ? 'required' : newDocRule === 'OPTIONAL' ? 'optional' : 'one of group'}).`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add document');
     }
   }
 
-  async function removeDoc(id: number) {
+  async function hideDoc(id: number) {
     if (!docEntity) return;
     setError('');
     setOk('');
     try {
       await api(`/api/admin/entity-documents/${id}`, { method: 'DELETE', token: session!.token });
-      setCatalogDocs((rows) => {
-        const next = rows.filter((r) => r.id !== id);
-        setDocCounts((prev) => {
-          const cur = prev[docEntity] || { registration: 0, onboarding: 0 };
-          return {
-            ...prev,
-            [docEntity]:
-              docPhase === 'REGISTRATION'
-                ? { ...cur, registration: next.length }
-                : { ...cur, onboarding: next.length },
-          };
-        });
-        return next;
-      });
+      setCatalogDocs((rows) => rows.map((r) => (r.id === id ? { ...r, active: false, hidden: true } : r)));
       setEditingDocId(null);
-      setOk(`Document removed from ${docPhase === 'REGISTRATION' ? 'registration' : 'onboarding'}.`);
+      setDocCounts((prev) => {
+        const cur = prev[docEntity] || { registration: 0, onboarding: 0 };
+        const n = Math.max(0, (docPhase === 'REGISTRATION' ? cur.registration : cur.onboarding) - 1);
+        return {
+          ...prev,
+          [docEntity]:
+            docPhase === 'REGISTRATION'
+              ? { ...cur, registration: n }
+              : { ...cur, onboarding: n },
+        };
+      });
+      setOk('Document hidden from applicant onboarding. Restore anytime from Hidden.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not remove document');
+      setError(err instanceof Error ? err.message : 'Could not hide document');
+    }
+  }
+
+  async function restoreDoc(id: number) {
+    if (!docEntity) return;
+    setError('');
+    setOk('');
+    try {
+      const saved = await api<CatalogDoc>(`/api/admin/entity-documents/${id}/restore`, {
+        method: 'POST',
+        token: session!.token,
+      });
+      setCatalogDocs((rows) => rows.map((r) => (r.id === saved.id ? saved : r)));
+      setDocCounts((prev) => {
+        const cur = prev[docEntity] || { registration: 0, onboarding: 0 };
+        const n = (docPhase === 'REGISTRATION' ? cur.registration : cur.onboarding) + 1;
+        return {
+          ...prev,
+          [docEntity]:
+            docPhase === 'REGISTRATION'
+              ? { ...cur, registration: n }
+              : { ...cur, onboarding: n },
+        };
+      });
+      setOk('Document visible again on applicant checklist.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not restore document');
     }
   }
 
@@ -793,54 +846,105 @@ export function AdminPage() {
   const setupPolicy = kycPolicies.find((row) => row.entityType === docEntity) ?? null;
   const setupName = setupPolicy ? (nameDrafts[setupPolicy.entityType] ?? setupPolicy.label) : '';
   const setupNameDirty = !!setupPolicy && setupName.trim() !== setupPolicy.label;
-  const requiredDocs = catalogDocs.filter((doc) => doc.requirement === 'REQUIRED');
-  const optionalDocs = catalogDocs.filter((doc) => doc.requirement === 'OPTIONAL');
-  const oneOfDocs = catalogDocs.filter((doc) => doc.requirement === 'ONE_OF');
+  const isHidden = (doc: CatalogDoc) => doc.hidden === true || doc.active === false;
+  const visibleDocs = catalogDocs.filter((doc) => !isHidden(doc));
+  const hiddenDocs = catalogDocs.filter((doc) => isHidden(doc));
+  const requiredDocs = visibleDocs.filter((doc) => doc.requirement === 'REQUIRED');
+  const optionalDocs = visibleDocs.filter((doc) => doc.requirement === 'OPTIONAL');
+  const oneOfDocs = visibleDocs.filter((doc) => doc.requirement === 'ONE_OF');
+
+  function rulePill(doc: CatalogDoc) {
+    if (isHidden(doc)) return { label: 'Hidden', cls: 'hid' };
+    if (doc.requirement === 'ONE_OF') return { label: 'One of', cls: 'one' };
+    if (doc.requirement === 'REQUIRED' || doc.mandatory) return { label: 'Required', cls: 'req' };
+    return { label: 'Optional', cls: 'opt' };
+  }
 
   function renderCatalogDoc(doc: CatalogDoc) {
     const editing = editingDocId === doc.id;
-    const pill =
-      doc.requirement === 'ONE_OF' ? 'One of group' : doc.mandatory ? 'Required' : 'Optional';
+    const pill = rulePill(doc);
+    const rule = (doc.requirement === 'ONE_OF' || doc.requirement === 'OPTIONAL' || doc.requirement === 'REQUIRED'
+      ? doc.requirement
+      : doc.mandatory ? 'REQUIRED' : 'OPTIONAL') as DocRule;
+
     return (
-      <li key={doc.id} className={`entity-doc ${editing ? 'is-editing' : ''}`}>
+      <li key={doc.id} className={`entity-doc ${editing ? 'is-editing' : ''} ${isHidden(doc) ? 'is-hidden' : ''}`}>
         {!editing ? (
           <div className="entity-doc-main">
             <div>
               <strong>{doc.documentLabel}</strong>
-              {doc.custom && <span className="entity-doc-code">Added by back office</span>}
+              {doc.custom && <span className="entity-doc-code">Custom</span>}
             </div>
-            <span className={`entity-pill entity-pill--${doc.requirement === 'ONE_OF' ? 'one' : doc.mandatory ? 'req' : 'opt'}`}>{pill}</span>
-            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditingDocId(doc.id)}>Edit</button>
+            <span className={`entity-pill entity-pill--${pill.cls}`}>{pill.label}</span>
+            {isHidden(doc) ? (
+              <button className="btn btn-primary btn-sm" type="button" onClick={() => void restoreDoc(doc.id)}>
+                Show
+              </button>
+            ) : (
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditingDocId(doc.id)}>
+                Edit
+              </button>
+            )}
           </div>
         ) : (
           <div className="entity-doc-edit">
-            <input
-              value={doc.documentLabel}
-              onChange={(e) => setCatalogDocs((rows) => rows.map((r) => (
-                r.id === doc.id ? { ...r, documentLabel: e.target.value } : r
-              )))}
-              aria-label="Document name"
-            />
-            {doc.requirement === 'ONE_OF' ? (
-              <p className="muted">Applicants upload one document from this group. The name can change. The group stays.</p>
-            ) : (
-              <label className="ops-check">
-                <input
-                  type="checkbox"
-                  checked={doc.mandatory}
-                  onChange={(e) => setCatalogDocs((rows) => rows.map((r) => (
-                    r.id === doc.id ? { ...r, mandatory: e.target.checked, requirement: e.target.checked ? 'REQUIRED' : 'OPTIONAL' } : r
-                  )))}
-                />
-                Required before submit
-              </label>
+            <label className="entity-field">
+              <span>Name on application</span>
+              <input
+                value={doc.documentLabel}
+                onChange={(e) => patchDoc(doc.id, { documentLabel: e.target.value })}
+              />
+            </label>
+
+            <div className="doc-rule-field">
+              <span className="doc-rule-label">Rule for applicants</span>
+              <div className="doc-rule-seg" role="group" aria-label="Document rule">
+                {(
+                  [
+                    { id: 'REQUIRED', title: 'Required', hint: 'Must upload' },
+                    { id: 'OPTIONAL', title: 'Optional', hint: 'Can skip' },
+                    { id: 'ONE_OF', title: 'One of', hint: 'Any one in group' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`doc-rule-btn ${rule === opt.id ? 'is-on' : ''}`}
+                    onClick={() =>
+                      patchDoc(doc.id, {
+                        requirement: opt.id,
+                        mandatory: opt.id === 'REQUIRED',
+                        oneOfGroup: opt.id === 'ONE_OF' ? (doc.oneOfGroup || 1) : 0,
+                      })
+                    }
+                  >
+                    <strong>{opt.title}</strong>
+                    <small>{opt.hint}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {rule === 'ONE_OF' && (
+              <p className="muted doc-rule-hint">
+                Applicant must upload <strong>one</strong> document from the “One of” list. Rename freely; use Hide to drop it from onboarding.
+              </p>
             )}
+
             <div className="entity-doc-actions">
-              <button className="btn btn-primary btn-sm" type="button" onClick={() => void saveDoc(doc)}>Save</button>
-              <button className="btn btn-ghost btn-sm" type="button" onClick={() => docEntity && void openDocs(docEntity, docPhase)}>Cancel</button>
-              {doc.custom && (
-                <button className="btn btn-ghost btn-sm" type="button" onClick={() => void removeDoc(doc.id)}>Remove</button>
-              )}
+              <button className="btn btn-primary btn-sm" type="button" onClick={() => void saveDoc(doc)}>
+                Save
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                type="button"
+                onClick={() => docEntity && void openDocs(docEntity, docPhase)}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => void hideDoc(doc.id)}>
+                Hide from onboarding
+              </button>
             </div>
           </div>
         )}
@@ -1009,27 +1113,35 @@ export function AdminPage() {
                 </div>
                 <p className="muted">
                   {docPhase === 'REGISTRATION'
-                    ? 'Registration pack — collected with signup / Existing NTN flow (shown on application documents step).'
-                    : 'Onboarding pack — Annex-C files after login. Required files block submit.'}
+                    ? 'Registration pack — signup / Existing NTN. Set each file Required, Optional, One of, or Hide.'
+                    : 'Onboarding pack — after login. Required & “One of” block submit; Optional does not; Hidden is off the checklist.'}
                 </p>
               </div>
 
               {requiredDocs.length > 0 && (
                 <div className="entity-doc-block">
-                  <h4>Required</h4>
+                  <h4>Required <span className="entity-doc-count">{requiredDocs.length}</span></h4>
                   <ul className="entity-doc-list">{requiredDocs.map(renderCatalogDoc)}</ul>
                 </div>
               )}
               {oneOfDocs.length > 0 && (
                 <div className="entity-doc-block">
-                  <h4>Upload one of these</h4>
+                  <h4>One of <span className="entity-doc-count">{oneOfDocs.length}</span></h4>
+                  <p className="muted entity-doc-block-hint">Applicant uploads any one from this list.</p>
                   <ul className="entity-doc-list">{oneOfDocs.map(renderCatalogDoc)}</ul>
                 </div>
               )}
               {optionalDocs.length > 0 && (
                 <div className="entity-doc-block">
-                  <h4>Optional</h4>
+                  <h4>Optional <span className="entity-doc-count">{optionalDocs.length}</span></h4>
                   <ul className="entity-doc-list">{optionalDocs.map(renderCatalogDoc)}</ul>
+                </div>
+              )}
+              {hiddenDocs.length > 0 && (
+                <div className="entity-doc-block entity-doc-block--hidden">
+                  <h4>Hidden <span className="entity-doc-count">{hiddenDocs.length}</span></h4>
+                  <p className="muted entity-doc-block-hint">Not shown to applicants. Click Show to put back on the checklist.</p>
+                  <ul className="entity-doc-list">{hiddenDocs.map(renderCatalogDoc)}</ul>
                 </div>
               )}
 
@@ -1046,15 +1158,19 @@ export function AdminPage() {
                     value={newDocLabel}
                     onChange={(e) => setNewDocLabel(e.target.value)}
                     placeholder="Name shown on the application"
+                    required
                   />
                 </label>
-                <label className="ops-check">
-                  <input
-                    type="checkbox"
-                    checked={newDocRequired}
-                    onChange={(e) => setNewDocRequired(e.target.checked)}
-                  />
-                  Required
+                <label>
+                  <span>Rule</span>
+                  <select
+                    value={newDocRule}
+                    onChange={(e) => setNewDocRule(e.target.value as DocRule)}
+                  >
+                    <option value="REQUIRED">Required</option>
+                    <option value="OPTIONAL">Optional</option>
+                    <option value="ONE_OF">One of</option>
+                  </select>
                 </label>
                 <button className="btn btn-primary btn-sm" type="submit">Add</button>
               </form>

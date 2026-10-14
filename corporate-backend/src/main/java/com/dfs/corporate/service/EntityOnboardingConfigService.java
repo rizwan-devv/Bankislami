@@ -147,41 +147,61 @@ public class EntityOnboardingConfigService {
     }
 
     public List<Map<String, Object>> list(String entityType, String phaseRaw) {
+        return list(entityType, phaseRaw, false);
+    }
+
+    /** Admin catalogue — set includeHidden to show soft-hidden docs so they can be restored. */
+    public List<Map<String, Object>> list(String entityType, String phaseRaw, boolean includeHidden) {
         CorporateEntityType type = parseType(entityType);
         DocumentPhase phase = parsePhase(phaseRaw);
+        List<EntityOnboardingDocument> rows = includeHidden
+                ? documentRepository.findByEntityTypeAndPhaseOrderBySortOrderAscIdAsc(type.name(), phase.name())
+                : documentRepository.findByEntityTypeAndPhaseAndActiveTrueOrderBySortOrderAscIdAsc(
+                        type.name(), phase.name());
         List<Map<String, Object>> out = new ArrayList<>();
-        for (EntityOnboardingDocument row :
-                documentRepository.findByEntityTypeAndPhaseAndActiveTrueOrderBySortOrderAscIdAsc(
-                        type.name(), phase.name())) {
+        for (EntityOnboardingDocument row : rows) {
             out.add(toView(row));
         }
         return out;
     }
 
     public List<Map<String, Object>> list(String entityType) {
-        return list(entityType, DocumentPhase.ONBOARDING.name());
+        return list(entityType, DocumentPhase.ONBOARDING.name(), false);
     }
 
+    /**
+     * Update label / rule (REQUIRED | OPTIONAL | ONE_OF) / visibility.
+     * Hidden docs stay in DB (active=false) and drop off applicant checklists.
+     */
     @Transactional
-    public Map<String, Object> update(Long id, String label, Boolean mandatory) {
+    public Map<String, Object> update(Long id, String label, String requirementRaw,
+                                      Boolean mandatory, Boolean active, Integer oneOfGroup) {
         EntityOnboardingDocument row = documentRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
-        if (!row.isActive()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Document is no longer on the checklist");
+        if (label != null && !label.isBlank()) {
+            row.setDocumentLabel(cleanLabel(label));
         }
-        String nextLabel = cleanLabel(label);
-        row.setDocumentLabel(nextLabel);
-        if (!"ONE_OF".equals(row.getRequirement()) && mandatory != null) {
-            row.setMandatory(mandatory);
-            row.setRequirement(mandatory ? "REQUIRED" : "OPTIONAL");
+        if (requirementRaw != null && !requirementRaw.isBlank()) {
+            applyRequirement(row, requirementRaw, oneOfGroup);
+        } else if (mandatory != null) {
+            applyRequirement(row, mandatory ? "REQUIRED" : "OPTIONAL", oneOfGroup);
+        }
+        if (active != null) {
+            row.setActive(active);
         }
         documentRepository.save(row);
         syncUploadCatalog(row);
         return toView(row);
     }
 
+    /** @deprecated Prefer {@link #update(Long, String, String, Boolean, Boolean, Integer)}. */
     @Transactional
-    public Map<String, Object> add(String entityType, String phaseRaw, String label, boolean mandatory) {
+    public Map<String, Object> update(Long id, String label, Boolean mandatory) {
+        return update(id, label, null, mandatory, null, null);
+    }
+
+    @Transactional
+    public Map<String, Object> add(String entityType, String phaseRaw, String label, String requirementRaw) {
         CorporateEntityType type = parseType(entityType);
         DocumentPhase phase = parsePhase(phaseRaw);
         String nextLabel = cleanLabel(label);
@@ -193,9 +213,7 @@ public class EntityOnboardingConfigService {
         row.setPhase(phase.name());
         row.setDocumentCode(code);
         row.setDocumentLabel(nextLabel);
-        row.setMandatory(mandatory);
-        row.setRequirement(mandatory ? "REQUIRED" : "OPTIONAL");
-        row.setOneOfGroup(0);
+        applyRequirement(row, requirementRaw != null ? requirementRaw : "REQUIRED", null);
         row.setActive(true);
         if (existing == null) {
             int next = documentRepository.findFirstByEntityTypeAndPhaseOrderBySortOrderDesc(type.name(), phase.name())
@@ -209,25 +227,48 @@ public class EntityOnboardingConfigService {
     }
 
     @Transactional
+    public Map<String, Object> add(String entityType, String phaseRaw, String label, boolean mandatory) {
+        return add(entityType, phaseRaw, label, mandatory ? "REQUIRED" : "OPTIONAL");
+    }
+
+    @Transactional
     public Map<String, Object> add(String entityType, String label, boolean mandatory) {
         return add(entityType, DocumentPhase.ONBOARDING.name(), label, mandatory);
     }
 
+    /** Soft-hide from applicant onboarding (any seeded or custom row). */
     @Transactional
     public void remove(Long id) {
         EntityOnboardingDocument row = documentRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
-        if (row.getDocumentCode() == null || !row.getDocumentCode().startsWith("CUSTOM_")) {
-            // Allow removing seeded REGISTRATION docs as well (soft-delete); keep Annex-C ONBOARDING seeds.
-            if (!(DocumentPhase.REGISTRATION.name().equals(row.getPhase())
-                    && row.getDocumentCode() != null
-                    && row.getDocumentCode().startsWith("REG_"))) {
-                throw new ApiException(HttpStatus.BAD_REQUEST,
-                        "Only custom documents (or registration REG_* seeds) can be removed");
-            }
-        }
         row.setActive(false);
         documentRepository.save(row);
+    }
+
+    @Transactional
+    public Map<String, Object> restore(Long id) {
+        EntityOnboardingDocument row = documentRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Document not found"));
+        row.setActive(true);
+        documentRepository.save(row);
+        syncUploadCatalog(row);
+        return toView(row);
+    }
+
+    private void applyRequirement(EntityOnboardingDocument row, String requirementRaw, Integer oneOfGroup) {
+        String req = requirementRaw.trim().toUpperCase(Locale.ROOT);
+        if (!"REQUIRED".equals(req) && !"OPTIONAL".equals(req) && !"ONE_OF".equals(req)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "requirement must be REQUIRED, OPTIONAL, or ONE_OF");
+        }
+        row.setRequirement(req);
+        row.setMandatory("REQUIRED".equals(req));
+        if ("ONE_OF".equals(req)) {
+            int group = oneOfGroup != null && oneOfGroup > 0 ? oneOfGroup : Math.max(1, row.getOneOfGroup());
+            if (group <= 0) group = 1;
+            row.setOneOfGroup(group);
+        } else {
+            row.setOneOfGroup(0);
+        }
     }
 
     private void syncUploadCatalog(EntityOnboardingDocument row) {
@@ -292,6 +333,9 @@ public class EntityOnboardingConfigService {
         m.put("documentLabel", row.getDocumentLabel());
         m.put("mandatory", "REQUIRED".equals(row.getRequirement()));
         m.put("requirement", row.getRequirement());
+        m.put("oneOfGroup", row.getOneOfGroup());
+        m.put("active", row.isActive());
+        m.put("hidden", !row.isActive());
         m.put("custom", row.getDocumentCode() != null && (row.getDocumentCode().startsWith("CUSTOM_")
                 || row.getDocumentCode().startsWith("REG_")));
         return m;

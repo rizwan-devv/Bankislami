@@ -12,6 +12,9 @@ public interface EntityOnboardingDocumentRepository extends JpaRepository<Entity
     List<EntityOnboardingDocument> findByEntityTypeAndPhaseAndActiveTrueOrderBySortOrderAscIdAsc(
             String entityType, String phase);
 
+    List<EntityOnboardingDocument> findByEntityTypeAndPhaseOrderBySortOrderAscIdAsc(
+            String entityType, String phase);
+
     boolean existsByEntityType(String entityType);
 
     boolean existsByEntityTypeAndPhaseAndActiveTrue(String entityType, String phase);

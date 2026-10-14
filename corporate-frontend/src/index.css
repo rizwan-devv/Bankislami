@@ -1788,6 +1788,7 @@ h2 {
 }
 .entity-field-row input,
 .entity-add input,
+.entity-add select,
 .entity-doc-edit input {
   flex: 1;
   min-width: 12rem;
@@ -1903,7 +1904,106 @@ h2 {
 .entity-pill--req { background: rgba(0, 182, 122, 0.16); color: #047857; }
 .entity-pill--opt { background: rgba(148, 163, 184, 0.2); color: var(--muted); }
 .entity-pill--one { background: rgba(0, 69, 124, 0.12); color: #00457c; }
+.entity-pill--hid { background: rgba(100, 116, 139, 0.18); color: #64748b; }
 .entity-pill--office { background: rgba(180, 83, 9, 0.14); color: #9a3412; }
+
+.entity-doc-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  margin-left: 0.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  vertical-align: middle;
+}
+
+.entity-doc-block-hint {
+  margin: -0.25rem 0 0.65rem;
+  font-size: 0.85rem;
+}
+
+.entity-doc-block--hidden {
+  opacity: 0.92;
+  border-top: 1px dashed var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.entity-doc.is-hidden {
+  opacity: 0.75;
+  background: var(--bg-soft);
+}
+
+.doc-rule-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.doc-rule-label {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.doc-rule-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.doc-rule-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.doc-rule-btn strong {
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.doc-rule-btn small {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.doc-rule-btn.is-on {
+  border-color: var(--border-strong);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.doc-rule-btn.is-on small {
+  color: var(--accent-strong);
+}
+
+.doc-rule-hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 700px) {
+  .doc-rule-seg {
+    grid-template-columns: 1fr;
+  }
+}
 .entity-add {
   margin-top: 0.25rem;
   padding-top: 0.85rem;
