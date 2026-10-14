@@ -75,5 +75,8 @@ docker compose up -d --build
 
 - No MySQL container on this host — DB is external.
 - Do **not** commit `.env`.
-- First backend start runs Flyway on `bankislami_corporate`.
+- First backend start runs Flyway on `bankislami_corporate` (empty DB required; do not reuse `dfs_corporate`).
+- Backend needs `flyway-mysql` + `mysql-connector-j` (in `corporate-backend/pom.xml`).
+- Frontend nginx proxies `/api/` → `bankislami-backend:8091`.
+- Seeded admin after first start: `admin@dfscorporate.local` / `Admin@123`.
 - Live agent transactions: set `DFS_PROXY_ENABLED=true` when ready.
