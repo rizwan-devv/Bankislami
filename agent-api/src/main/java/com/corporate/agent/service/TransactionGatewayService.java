@@ -219,33 +219,38 @@ public class TransactionGatewayService {
         return stubCashResult();
     }
 
-    /** Portal FT: only fields DFS InitiateLocalFTRequest allows (no fromAccountNid). */
+    /**
+     * Portal FT: only fields DFS InitiateLocalFTRequest allows.
+     * Never requires AgentStore / JWT — app payload already has mobileNumber + nidNo (as before).
+     */
     private ApiEnvelope enrichFtEnvelope(String authorization, ApiEnvelope body) {
-        AgentAccount agent = requireAgentWithCnic(authorization, body);
         ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
-        // Strip IBFT-only fields the app/proxy may have left on the payload
+        // Strip IBFT-only fields — DFS rejects unknown fromAccountNid on local FT
         payload.remove("fromAccountNid");
         payload.remove("fromAccountNo");
-        putIfBlank(payload, "mobileNumber", agent.getMobile());
-        String nid = normalizeNid(agent.getNidNo());
-        if (nid != null && !nid.isBlank()) {
-            payload.put("nidNo", nid);
+
+        WalletIds ids = resolveWalletIds(authorization, body, payload);
+        putIfBlank(payload, "mobileNumber", ids.mobile);
+        if (!ids.nid.isBlank()) {
+            putIfBlank(payload, "nidNo", ids.nid);
         }
         return copyEnvelope(body, payload);
     }
 
     /**
-     * Mirror Corporate portal IBFT: inject fromAccountNo / fromAccountNid from logged-in agent,
-     * normalize beneficiary aliases, default purpose on advice.
+     * IBFT: inject fromAccountNo / fromAccountNid when missing.
+     * Never 401 for missing in-memory session — use payload + corporate CNIC fallback.
      */
     private ApiEnvelope enrichIbftEnvelope(String authorization, ApiEnvelope body, boolean forAdvice) {
-        AgentAccount agent = requireAgentWithCnic(authorization, body);
         ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
+        WalletIds ids = resolveWalletIds(authorization, body, payload);
 
-        putIfBlank(payload, "fromAccountNo", agent.getMobile());
-        String nid = normalizeNid(agent.getNidNo());
-        payload.put("fromAccountNid", nid);
-        putIfBlank(payload, "nidNo", nid);
+        putIfBlank(payload, "fromAccountNo", ids.mobile);
+        putIfBlank(payload, "mobileNumber", ids.mobile);
+        if (!ids.nid.isBlank()) {
+            putIfBlank(payload, "fromAccountNid", ids.nid);
+            putIfBlank(payload, "nidNo", ids.nid);
+        }
 
         copyFirstAlias(payload, "beneficiaryAccountNo",
                 "accountNo", "toAccountNo", "iban", "beneficiaryIban");
@@ -264,6 +269,55 @@ public class TransactionGatewayService {
         return copyEnvelope(body, payload);
     }
 
+    /**
+     * Resolve mobile + CNIC without throwing.
+     * Order: payload → JWT/store agent → corporate/DFS CNIC lookup for that mobile.
+     */
+    private WalletIds resolveWalletIds(String authorization, ApiEnvelope body, ObjectNode payload) {
+        String mobile = firstNonBlank(
+                text(payload, "mobileNumber"),
+                text(payload, "fromAccountNo"),
+                text(body != null ? body.getPayload() : null, "mobileNumber"),
+                text(body != null ? body.getPayload() : null, "fromAccountNo"));
+        try {
+            String fromJwt = jwt.mobileFromAuthHeader(authorization);
+            if (mobile.isBlank() && fromJwt != null && !fromJwt.isBlank()) {
+                mobile = fromJwt.trim();
+            }
+        } catch (Exception ignored) {
+            // txn calls often omit Authorization — OK
+        }
+
+        String nid = firstNonBlank(
+                normalizeNid(text(payload, "nidNo")),
+                normalizeNid(text(payload, "fromAccountNid")),
+                normalizeNid(text(payload, "cnic")),
+                normalizeNid(text(payload, "cnicNumber")));
+
+        AgentAccount agent = null;
+        if (!mobile.isBlank()) {
+            agent = store.find(mobile).orElse(null);
+        }
+        if (agent != null) {
+            identity.ensureCnic(agent);
+            if (mobile.isBlank()) mobile = agent.getMobile();
+            if (nid.isBlank()) nid = normalizeNid(agent.getNidNo());
+        } else if (nid.isBlank() && !mobile.isBlank()) {
+            // No in-memory session — still load CNIC from corporate (same as portal)
+            AgentAccount temp = new AgentAccount(mobile, "", "Agent " + mobile, "");
+            identity.ensureCnic(temp);
+            nid = normalizeNid(temp.getNidNo());
+            // Cache so later calls in this process find the agent
+            if (DfsAgentIdentityService.hasValidCnic(temp.getNidNo())) {
+                store.save(temp);
+            }
+        }
+
+        return new WalletIds(mobile != null ? mobile : "", nid != null ? nid : "");
+    }
+
+    private record WalletIds(String mobile, String nid) {}
+
     private ApiEnvelope copyEnvelope(ApiEnvelope body, ObjectNode payload) {
         ApiEnvelope out = new ApiEnvelope();
         if (body != null) {
@@ -278,35 +332,10 @@ public class TransactionGatewayService {
         return out;
     }
 
-    private AgentAccount requireAgentWithCnic(String authorization, ApiEnvelope envelope) {
-        AgentAccount agent = requireAgent(authorization, envelope);
-        identity.ensureCnic(agent);
-        // Soft: still send what we have; portal party CNIC should fill via corporate lookup
-        return agent;
-    }
-
     private static String normalizeNid(String raw) {
         String d = digitsOnly(raw);
         if (d == null) return "";
         return d.length() > 13 ? d.substring(0, 13) : d;
-    }
-
-    private AgentAccount requireAgent(String authorization, ApiEnvelope envelope) {
-        String mobile = null;
-        try {
-            mobile = jwt.mobileFromAuthHeader(authorization);
-        } catch (Exception ignored) {
-            // fall through
-        }
-        if (mobile == null || mobile.isBlank()) {
-            mobile = text(envelope != null ? envelope.getPayload() : null, "mobileNumber");
-        }
-        if (mobile == null || mobile.isBlank()) {
-            mobile = text(envelope != null ? envelope.getPayload() : null, "fromAccountNo");
-        }
-        return store.find(mobile)
-                .orElseThrow(() -> new WalletService.UnauthorizedException(
-                        "Invalid or missing token / agent for IBFT"));
     }
 
     private static void putIfBlank(ObjectNode payload, String field, String value) {
