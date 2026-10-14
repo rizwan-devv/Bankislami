@@ -6,6 +6,7 @@ import com.dfs.corporate.service.AmlWatchlistImportService;
 import com.dfs.corporate.service.EntityKycPolicyService;
 import com.dfs.corporate.service.EntityOnboardingConfigService;
 import com.dfs.corporate.service.VirtualCardService;
+import com.dfs.corporate.web.dto.ApprovePartyRequest;
 import com.dfs.corporate.web.dto.PartnerAppUserResponse;
 import com.dfs.corporate.web.dto.PartnerInviteResponse;
 import com.dfs.corporate.web.dto.PartyResponse;
@@ -154,13 +155,16 @@ public class AdminController {
     }
 
     @PostMapping("/parties/{id}/approve")
-    public Map<String, Object> approve(@PathVariable Long id, @AuthenticationPrincipal AccountPrincipal admin) {
-        return adminOnboardingService.approve(id, admin);
+    public Map<String, Object> approve(@PathVariable Long id,
+                                       @RequestBody(required = false) ApprovePartyRequest body,
+                                       @AuthenticationPrincipal AccountPrincipal admin) {
+        return adminOnboardingService.approve(id, admin, body);
     }
 
     @PostMapping("/parties/{id}/retry-account-provision")
-    public PartyResponse retryAccountProvision(@PathVariable Long id) {
-        return adminOnboardingService.retryAccountProvision(id);
+    public PartyResponse retryAccountProvision(@PathVariable Long id,
+                                               @RequestBody(required = false) ApprovePartyRequest body) {
+        return adminOnboardingService.retryAccountProvision(id, body);
     }
 
     @PostMapping("/parties/{id}/reject")

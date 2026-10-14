@@ -7,6 +7,9 @@ import com.dfs.corporate.repository.BrandRepository;
 import com.dfs.corporate.repository.PartyDocumentRepository;
 import com.dfs.corporate.repository.PartyRepository;
 import com.dfs.corporate.security.AccountPrincipal;
+import com.dfs.corporate.repository.PartnerAppUserRepository;
+import com.dfs.corporate.util.IdentityFormats;
+import com.dfs.corporate.web.dto.ApprovePartyRequest;
 import com.dfs.corporate.web.dto.PartnerAppUserResponse;
 import com.dfs.corporate.web.dto.PartnerInviteResponse;
 import com.dfs.corporate.web.dto.PartyResponse;
@@ -48,6 +51,7 @@ public class AdminOnboardingService {
     private final SanctionsScreeningService sanctionsScreeningService;
     private final EntityKycPolicyService entityKycPolicyService;
     private final EntityOnboardingConfigService entityOnboardingConfigService;
+    private final PartnerAppUserRepository partnerAppUserRepository;
     private final SecureRandom random = new SecureRandom();
 
     public AdminOnboardingService(PartyRepository partyRepository,
@@ -66,7 +70,8 @@ public class AdminOnboardingService {
                                   PartyStatusSyncService partyStatusSyncService,
                                   SanctionsScreeningService sanctionsScreeningService,
                                   EntityKycPolicyService entityKycPolicyService,
-                                  EntityOnboardingConfigService entityOnboardingConfigService) {
+                                  EntityOnboardingConfigService entityOnboardingConfigService,
+                                  PartnerAppUserRepository partnerAppUserRepository) {
         this.partyRepository = partyRepository;
         this.accountRepository = accountRepository;
         this.documentRepository = documentRepository;
@@ -84,6 +89,7 @@ public class AdminOnboardingService {
         this.sanctionsScreeningService = sanctionsScreeningService;
         this.entityKycPolicyService = entityKycPolicyService;
         this.entityOnboardingConfigService = entityOnboardingConfigService;
+        this.partnerAppUserRepository = partnerAppUserRepository;
     }
 
     public List<Map<String, Object>> brands() {
@@ -131,7 +137,7 @@ public class AdminOnboardingService {
     }
 
     @Transactional
-    public Map<String, Object> approve(Long id, AccountPrincipal admin) {
+    public Map<String, Object> approve(Long id, AccountPrincipal admin, ApprovePartyRequest body) {
         Party party = partyRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Party not found"));
         partnerAppUserService.tryAdvanceParty(party.getId());
@@ -147,6 +153,7 @@ public class AdminOnboardingService {
             throw new ApiException(HttpStatus.BAD_REQUEST,
                     "Cannot approve: partner mobile KYC still incomplete");
         }
+        party = applyBackOfficeCnic(party, body != null ? body.getCnicNumber() : null, true);
         List<PartyDocument> docs = documentRepository.findByPartyIdOrderByUploadedAtDesc(party.getId());
         long pendingDocs = docs.stream().filter(d -> d.getStatus() == DocumentStatus.PENDING).count();
         long rejectedDocs = docs.stream().filter(d -> d.getStatus() == DocumentStatus.REJECTED).count();
@@ -261,8 +268,51 @@ public class AdminOnboardingService {
     }
 
     @Transactional
-    public PartyResponse retryAccountProvision(Long id) {
+    public PartyResponse retryAccountProvision(Long id, ApprovePartyRequest body) {
+        Party party = partyRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Party not found"));
+        applyBackOfficeCnic(party, body != null ? body.getCnicNumber() : null, true);
         return enrich(accountProvisioningService.retry(id));
+    }
+
+    /**
+     * Persist owner CNIC from back office when KYC app did not capture it.
+     * DFS corporateonboarding requires a real nidNo — never send placeholder zeros.
+     */
+    private Party applyBackOfficeCnic(Party party, String rawCnic, boolean requiredForProvision) {
+        String existing = IdentityFormats.cnicDigits(party.getCnicNumber());
+        if (existing == null) {
+            existing = partnerAppUserService.listForParty(party.getId()).stream()
+                    .map(u -> IdentityFormats.cnicDigits(u.getCnicNumber()))
+                    .filter(c -> c != null && c.length() >= 13)
+                    .findFirst()
+                    .orElse(null);
+        }
+        String incoming = IdentityFormats.cnicDigits(rawCnic);
+        String resolved = incoming != null ? incoming : existing;
+        if (resolved == null || resolved.length() < 13) {
+            if (requiredForProvision) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Owner CNIC (13 digits) is required for DFS account provision. "
+                                + "Enter it here when mobile KYC did not capture CNIC.");
+            }
+            return party;
+        }
+        if (resolved.length() > 13) {
+            resolved = resolved.substring(0, 13);
+        }
+        party.setCnicNumber(resolved);
+        party = partyRepository.save(party);
+        // Mirror onto first partner app user if present (mapper prefers primary user CNIC)
+        var users = partnerAppUserRepository.findByPartyIdOrderByIdAsc(party.getId());
+        if (!users.isEmpty()) {
+            PartnerAppUser primary = users.get(0);
+            if (IdentityFormats.cnicDigits(primary.getCnicNumber()) == null) {
+                primary.setCnicNumber(resolved);
+                partnerAppUserRepository.save(primary);
+            }
+        }
+        return party;
     }
 
     @Transactional

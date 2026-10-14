@@ -94,6 +94,8 @@ type Party = {
   dfsAccountId?: string;
   cmsRelationshipNum?: string;
   accountProvisionError?: string;
+  /** Owner CNIC for DFS provision (KYC or back-office). */
+  cnicNumber?: string;
 };
 
 const STATUS_FILTERS = [
@@ -200,6 +202,8 @@ export function AdminPage() {
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+  /** Back-office CNIC when mobile KYC skipped / did not capture it. */
+  const [backOfficeCnic, setBackOfficeCnic] = useState('');
   const [manualKycReason, setManualKycReason] = useState('');
   const [manualKycUserId, setManualKycUserId] = useState<number | null>(null);
   const [discrepancy, setDiscrepancy] = useState('');
@@ -365,17 +369,27 @@ export function AdminPage() {
   if (!session) return <Navigate to="/login" replace />;
   if (session.role !== 'PLATFORM_ADMIN') return <Navigate to="/" replace />;
 
+  function seedBackOfficeCnic(party: Party) {
+    const fromParty = (party.cnicNumber || '').replace(/\D/g, '');
+    const fromPartner = (party.partnerAppUsers || [])
+      .map((u) => (u.cnicNumber || '').replace(/\D/g, ''))
+      .find((c) => c.length >= 13);
+    setBackOfficeCnic(fromParty.length >= 13 ? fromParty.slice(0, 13) : (fromPartner?.slice(0, 13) || ''));
+  }
+
   async function open(id: number) {
     setError(''); setOk('');
     const data = await api<Party>(`/api/admin/parties/${id}`, { token: session!.token });
     setSelected(data);
     setViewerDocId(null);
     setDiscrepancy(data.discrepancyNote || '');
+    seedBackOfficeCnic(data);
   }
 
   function goQueue() {
     setSelected(null);
     setViewerDocId(null);
+    setBackOfficeCnic('');
     navigate('/admin');
   }
 
@@ -383,14 +397,29 @@ export function AdminPage() {
     navigate(`/admin/review/${id}`);
   }
 
+  function cnicPayload(): { cnicNumber?: string } {
+    const digits = backOfficeCnic.replace(/\D/g, '');
+    return digits.length >= 13 ? { cnicNumber: digits.slice(0, 13) } : {};
+  }
+
   async function approve(id: number) {
     setError(''); setOk('');
+    const digits = backOfficeCnic.replace(/\D/g, '');
+    const hasExisting = !!(selected?.cnicNumber || selected?.partnerAppUsers?.some((u) => (u.cnicNumber || '').replace(/\D/g, '').length >= 13));
+    if (!hasExisting && digits.length < 13) {
+      setError('Owner CNIC (13 digits) is required for DFS account provision when KYC did not capture it');
+      return;
+    }
     try {
       const res = await api<{ temporaryPassword: string; message: string; accountProvisionStatus?: string }>(
         `/api/admin/parties/${id}/approve`,
-        { method: 'POST', token: session!.token },
+        {
+          method: 'POST',
+          token: session!.token,
+          body: JSON.stringify(cnicPayload()),
+        },
       );
-      setOk(`${res.message} Temp password: ${res.temporaryPassword}`);
+      setOk(`${res.message}${res.temporaryPassword ? ` Temp password: ${res.temporaryPassword}` : ''}`);
       goQueue();
       await refresh();
     } catch (err) {
@@ -400,11 +429,20 @@ export function AdminPage() {
 
   async function retryProvision(id: number) {
     setError(''); setOk('');
+    const digits = backOfficeCnic.replace(/\D/g, '');
+    const hasExisting = !!(selected?.cnicNumber || selected?.partnerAppUsers?.some((u) => (u.cnicNumber || '').replace(/\D/g, '').length >= 13));
+    if (!hasExisting && digits.length < 13) {
+      setError('Owner CNIC (13 digits) is required to retry DFS account provision');
+      return;
+    }
     try {
       const data = await api<Party>(`/api/admin/parties/${id}/retry-account-provision`, {
-        method: 'POST', token: session!.token,
+        method: 'POST',
+        token: session!.token,
+        body: JSON.stringify(cnicPayload()),
       });
       setSelected(data);
+      seedBackOfficeCnic(data);
       setOk(`Account provision: ${data.accountProvisionStatus}${data.dfsAccountId ? ` · ${data.dfsAccountId}` : ''}`);
       await refresh();
     } catch (err) {
@@ -1201,7 +1239,12 @@ export function AdminPage() {
               <h1 className="ops-case-title">Review Merchant</h1>
               <h2 className="ops-case-merchant">{selected.businessName || selected.fullName}</h2>
               <p className="muted ops-case-sub">
-                {[selected.email, selected.phone, selected.entityType || selected.partyType]
+                {[
+                  selected.email,
+                  selected.phone,
+                  selected.cnicNumber ? `CNIC ${selected.cnicNumber}` : null,
+                  selected.entityType || selected.partyType,
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </p>
@@ -1550,7 +1593,20 @@ export function AdminPage() {
               {selected.accountProvisionError && (
                 <div className="alert alert-info">{selected.accountProvisionError}</div>
               )}
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div className="form-row" style={{ marginTop: '0.75rem' }}>
+                <label>
+                  Owner CNIC (required for DFS if KYC skipped)
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={15}
+                    placeholder="13-digit CNIC"
+                    value={backOfficeCnic}
+                    onChange={(e) => setBackOfficeCnic(e.target.value.replace(/[^\d-]/g, ''))}
+                  />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
                 {(selected.accountProvisionStatus === 'PENDING'
                   || selected.accountProvisionStatus === 'FAILED'
                   || selected.accountProvisionStatus === 'NOT_STARTED') && (
@@ -1586,6 +1642,21 @@ export function AdminPage() {
                 )}
                 {selected.status === 'INCOMPLETE' && (
                   <p className="muted">Incomplete: applicant must re-upload rejected documents.</p>
+                )}
+                {selected.status === 'PENDING_APPROVAL' && (
+                  <div className="form-row" style={{ marginTop: '0.5rem' }}>
+                    <label>
+                      Owner CNIC for DFS (if not from KYC)
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={15}
+                        placeholder="13-digit CNIC"
+                        value={backOfficeCnic}
+                        onChange={(e) => setBackOfficeCnic(e.target.value.replace(/[^\d-]/g, ''))}
+                      />
+                    </label>
+                  </div>
                 )}
                 <textarea
                   className="ops-drawer-textarea ops-drawer-textarea--compact"

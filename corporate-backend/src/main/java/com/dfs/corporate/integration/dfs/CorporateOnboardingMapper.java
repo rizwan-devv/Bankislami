@@ -100,11 +100,15 @@ public class CorporateOnboardingMapper {
                 primary != null ? primary.getGender() : null,
                 party.getGender(),
                 "M")));
-        // nidNo — always without dashes
-        p.setNidNo(firstNonBlank(
+        // nidNo — real CNIC only (back office / KYC). Never send placeholder zeros — DFS rejects duplicates.
+        String nid = firstNonBlank(
                 IdentityFormats.cnicDigits(primary != null ? primary.getCnicNumber() : null),
-                IdentityFormats.cnicDigits(party.getCnicNumber()),
-                "0000000000000"));
+                IdentityFormats.cnicDigits(party.getCnicNumber()));
+        if (nid == null || nid.length() < 13) {
+            throw new IllegalStateException(
+                    "Owner CNIC is required for DFS corporateonboarding (complete KYC or enter CNIC on approve)");
+        }
+        p.setNidNo(nid.length() > 13 ? nid.substring(0, 13) : nid);
         p.setDob(formatDate(firstDate(
                 primary != null ? primary.getDateOfBirth() : null,
                 party.getDateOfBirth(),

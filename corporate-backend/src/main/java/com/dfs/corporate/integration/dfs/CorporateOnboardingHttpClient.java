@@ -70,9 +70,8 @@ public class CorporateOnboardingHttpClient implements DfsAccountClient {
         }
 
         List<PartnerAppUser> users = appUserRepository.findByPartyIdOrderByIdAsc(party.getId());
-        CorporateOnboardingRequest body = mapper.map(party, users);
-
         try {
+            CorporateOnboardingRequest body = mapper.map(party, users);
             log.info("Calling DFS backend corporateonboarding for party {} → {}{}",
                     party.getTrackingId(), baseUrl, onboardingPath);
             String raw = restClient.post()

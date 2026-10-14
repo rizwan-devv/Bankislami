@@ -25,6 +25,8 @@ public class PartyResponse {
     private String brandName;
     private String email;
     private String phone;
+    /** Owner CNIC for DFS provision (from KYC or back-office approve). */
+    private String cnicNumber;
     private String incorporationNumber;
     private LocalDate incorporationDate;
     private String incorporationCountry;
@@ -102,6 +104,7 @@ public class PartyResponse {
         r.brandId = p.getBrandId();
         r.email = p.getEmail();
         r.phone = p.getPhone();
+        r.cnicNumber = p.getCnicNumber();
         r.incorporationNumber = p.getIncorporationNumber();
         r.incorporationDate = p.getIncorporationDate();
         r.incorporationCountry = p.getIncorporationCountry();
@@ -276,6 +279,8 @@ public class PartyResponse {
     public void setBrandName(String brandName) { this.brandName = brandName; }
     public String getEmail() { return email; }
     public String getPhone() { return phone; }
+    public String getCnicNumber() { return cnicNumber; }
+    public void setCnicNumber(String cnicNumber) { this.cnicNumber = cnicNumber; }
     public String getIncorporationNumber() { return incorporationNumber; }
     public LocalDate getIncorporationDate() { return incorporationDate; }
     public String getIncorporationCountry() { return incorporationCountry; }
