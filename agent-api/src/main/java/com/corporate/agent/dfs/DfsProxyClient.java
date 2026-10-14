@@ -35,12 +35,14 @@ public class DfsProxyClient {
     private final String portalKey;
     private final String channel;
     private final String agentBaseUrl;
+    private final String appBaseUrl;
     private final String txnBaseUrl;
     private final String portalTxnBaseUrl;
     private final String thirdPartyBaseUrl;
     private final String upstreamBearer;
     private final ObjectMapper mapper;
     private final RestClient agentClient;
+    private final RestClient appClient;
     private final RestClient txnClient;
     private final RestClient portalTxnClient;
     private final RestClient tpClient;
@@ -51,6 +53,7 @@ public class DfsProxyClient {
             @Value("${dfs.portal-key:}") String portalKey,
             @Value("${dfs.channel:COP}") String channel,
             @Value("${dfs.agent-base-url}") String agentBaseUrl,
+            @Value("${dfs.app-base-url:http://46.225.160.93:18002/app}") String appBaseUrl,
             @Value("${dfs.txn-base-url}") String txnBaseUrl,
             @Value("${dfs.portal-txn-base-url:}") String portalTxnBaseUrl,
             @Value("${dfs.third-party-base-url}") String thirdPartyBaseUrl,
@@ -63,6 +66,7 @@ public class DfsProxyClient {
         this.portalKey = portalKey != null ? portalKey.trim() : "";
         this.channel = channel != null && !channel.isBlank() ? channel.trim() : "COP";
         this.agentBaseUrl = trimSlash(agentBaseUrl);
+        this.appBaseUrl = trimSlash(appBaseUrl);
         this.txnBaseUrl = trimSlash(txnBaseUrl);
         this.portalTxnBaseUrl = trimSlash(
                 portalTxnBaseUrl != null && !portalTxnBaseUrl.isBlank()
@@ -79,6 +83,7 @@ public class DfsProxyClient {
         factory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
 
         this.agentClient = RestClient.builder().baseUrl(this.agentBaseUrl).requestFactory(factory).build();
+        this.appClient = RestClient.builder().baseUrl(this.appBaseUrl).requestFactory(factory).build();
         this.txnClient = RestClient.builder().baseUrl(this.txnBaseUrl).requestFactory(factory).build();
         this.portalTxnClient = RestClient.builder().baseUrl(this.portalTxnBaseUrl).requestFactory(factory).build();
         this.tpClient = RestClient.builder().baseUrl(this.thirdPartyBaseUrl).requestFactory(factory).build();
@@ -180,21 +185,31 @@ public class DfsProxyClient {
      * Same X-Portal-Key + channel as Corporate portal.
      */
     public Map<String, Object> postAgentCorporate(String agentPath, ObjectNode payload) {
+        return postPortalHost(agentClient, agentBaseUrl, agentPath, payload, "agent");
+    }
+
+    /** App corporate APIs (18002/app), e.g. accountDetails. */
+    public Map<String, Object> postAppCorporate(String appPath, ObjectNode payload) {
+        return postPortalHost(appClient, appBaseUrl, appPath, payload, "app");
+    }
+
+    private Map<String, Object> postPortalHost(
+            RestClient client, String base, String path, ObjectNode payload, String label) {
         try {
             ensurePortalReady();
         } catch (IllegalStateException ex) {
             return portalConfigError(ex);
         }
-        if (agentBaseUrl.isBlank()) {
-            return failMap("503", "dfs.agent-base-url is empty");
+        if (base == null || base.isBlank()) {
+            return failMap("503", "dfs." + label + "-base-url is empty");
         }
         ObjectNode body = mapper.createObjectNode();
         body.put("channel", channel);
         body.set("payload", payload != null ? payload : mapper.createObjectNode());
         try {
-            log.info("DFS agent portal POST channel={} → {}{}", channel, agentBaseUrl, agentPath);
-            String raw = agentClient.post()
-                    .uri(agentPath)
+            log.info("DFS {} portal POST channel={} → {}{}", label, channel, base, path);
+            String raw = client.post()
+                    .uri(path)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("X-Portal-Key", portalKey)
                     .body(body)
@@ -202,12 +217,16 @@ public class DfsProxyClient {
                     .body(String.class);
             return parseMap(raw);
         } catch (RestClientResponseException ex) {
-            log.warn("DFS agent portal HTTP {}: {}", ex.getStatusCode().value(), truncate(ex.getResponseBodyAsString()));
+            log.warn("DFS {} portal HTTP {}: {}", label, ex.getStatusCode().value(), truncate(ex.getResponseBodyAsString()));
             return errorFromUpstream(ex.getStatusCode().value(), ex.getResponseBodyAsString());
         } catch (Exception ex) {
-            log.warn("DFS agent portal failed: {}", ex.getMessage());
+            log.warn("DFS {} portal failed: {}", label, ex.getMessage());
             return failMap("502", "DFS upstream failed: " + ex.getMessage());
         }
+    }
+
+    public ObjectMapper mapper() {
+        return mapper;
     }
 
     /** Deep-copy payload for enrichment without mutating the request body. */

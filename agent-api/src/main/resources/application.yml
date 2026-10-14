@@ -12,9 +12,13 @@ app:
     secret: ${JWT_SECRET:CorporateAgentApiDevSecretKeyChangeMe32chars!!}
     expiry-hours: ${JWT_EXPIRY_HOURS:24}
 
-# Auth & registration are always managed HERE (not DFS).
+# Auth & registration are managed HERE; login can auto-provision from DFS when proxy on.
 agent:
   wallet-mode: ${AGENT_WALLET_MODE:local}   # local | dfs-proxy
+  # Must match DFS wallet level (portal default L4) — wrong level → USER NOT FOUND on getbalance
+  account-level-code: ${AGENT_ACCOUNT_LEVEL_CODE:L4}
+  # When local user missing: if DFS wallet exists, create agent (no curl register)
+  auto-provision-on-login: ${AGENT_AUTO_PROVISION:true}
 
 # Transactions: app → this API → DFS → response back to app
 # Default mode=portal: X-Portal-Key + /v1/corporate/* (same as Bank Islami / DFS Corporate portal)
@@ -25,6 +29,8 @@ dfs:
   portal-key: ${CORPORATE_PORTAL_API_KEY:}
   channel: ${DFS_PORTAL_API_CHANNEL:COP}
   agent-base-url: ${DFS_AGENT_BASE_URL:http://46.225.160.93:18001}
+  # App corporate APIs (accountDetails) — used for auto-provision CNIC/title
+  app-base-url: ${DFS_APP_API_BASE_URL:http://46.225.160.93:18002/app}
   txn-base-url: ${DFS_TXN_BASE_URL:http://46.225.160.93:18009}
   # Corporate portal txn base (with /transactions). Falls back to txn-base-url + /transactions
   portal-txn-base-url: ${DFS_TXN_API_BASE_URL:http://46.225.160.93:18009/transactions}

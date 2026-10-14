@@ -8,6 +8,7 @@ import com.corporate.agent.web.dto.ApiResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -24,12 +25,20 @@ public class WalletService {
     private final JwtService jwt;
     private final DfsProxyClient dfs;
     private final ObjectMapper mapper;
+    private final String defaultAccountLevel;
 
-    public WalletService(AgentStore store, JwtService jwt, DfsProxyClient dfs, ObjectMapper mapper) {
+    public WalletService(
+            AgentStore store,
+            JwtService jwt,
+            DfsProxyClient dfs,
+            ObjectMapper mapper,
+            @Value("${agent.account-level-code:L4}") String defaultAccountLevel) {
         this.store = store;
         this.jwt = jwt;
         this.dfs = dfs;
         this.mapper = mapper;
+        this.defaultAccountLevel = defaultAccountLevel != null && !defaultAccountLevel.isBlank()
+                ? defaultAccountLevel.trim() : "L4";
     }
 
     public Map<String, Object> getBalance(String authorization, ApiEnvelope envelope) {
@@ -37,8 +46,7 @@ public class WalletService {
         if (dfs.isEnabled() && dfs.isPortalMode()) {
             ObjectNode payload = mapper.createObjectNode();
             payload.put("mobileNumber", agent.getMobile());
-            payload.put("accountLevelCode",
-                    agent.getAccountLevelCode() != null ? agent.getAccountLevelCode() : "L2");
+            payload.put("accountLevelCode", resolveLevel(agent));
             Map<String, Object> resp = dfs.postAgentCorporate("/agentapp/v1/corporate/getbalance", payload);
             syncLocalBalance(agent, resp);
             return resp;
@@ -90,8 +98,7 @@ public class WalletService {
         if (dfs.isEnabled() && dfs.isPortalMode()) {
             ObjectNode payload = mapper.createObjectNode();
             payload.put("mobileNumber", agent.getMobile());
-            payload.put("accountLevelCode",
-                    agent.getAccountLevelCode() != null ? agent.getAccountLevelCode() : "L2");
+            payload.put("accountLevelCode", resolveLevel(agent));
             JsonNode req = envelope != null ? envelope.getPayload() : null;
             String from = text(req, "fromDate");
             String to = text(req, "toDate");
@@ -143,7 +150,13 @@ public class WalletService {
         return ApiResponse.ok(data);
     }
 
-    @SuppressWarnings("unchecked")
+    private String resolveLevel(AgentAccount agent) {
+        if (agent.getAccountLevelCode() != null && !agent.getAccountLevelCode().isBlank()) {
+            return agent.getAccountLevelCode().trim();
+        }
+        return defaultAccountLevel;
+    }
+
     private void syncLocalBalance(AgentAccount agent, Map<String, Object> resp) {
         if (resp == null) return;
         Object dataObj = resp.get("data");

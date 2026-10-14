@@ -1,11 +1,16 @@
 package com.corporate.agent.service;
 
 import com.corporate.agent.config.JwtService;
+import com.corporate.agent.dfs.DfsProxyClient;
 import com.corporate.agent.domain.AgentAccount;
 import com.corporate.agent.domain.PendingOtp;
 import com.corporate.agent.web.dto.ApiEnvelope;
 import com.corporate.agent.web.dto.ApiResponse;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -14,16 +19,31 @@ import java.util.Map;
 
 /**
  * Login + device registration are managed HERE (not forwarded to DFS).
+ * When portal proxy is on, missing local users can be auto-created from DFS wallet.
  */
 @Service
 public class AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final AgentStore store;
     private final JwtService jwt;
+    private final DfsProxyClient dfs;
+    private final boolean autoProvisionOnLogin;
+    private final String defaultAccountLevel;
 
-    public AuthService(AgentStore store, JwtService jwt) {
+    public AuthService(
+            AgentStore store,
+            JwtService jwt,
+            DfsProxyClient dfs,
+            @Value("${agent.auto-provision-on-login:true}") boolean autoProvisionOnLogin,
+            @Value("${agent.account-level-code:L4}") String defaultAccountLevel) {
         this.store = store;
         this.jwt = jwt;
+        this.dfs = dfs;
+        this.autoProvisionOnLogin = autoProvisionOnLogin;
+        this.defaultAccountLevel = defaultAccountLevel != null && !defaultAccountLevel.isBlank()
+                ? defaultAccountLevel.trim() : "L4";
     }
 
     public Map<String, Object> login(ApiEnvelope envelope) {
@@ -35,6 +55,9 @@ public class AuthService {
         }
 
         AgentAccount agent = store.find(mobile).orElse(null);
+        if (agent == null && autoProvisionOnLogin) {
+            agent = tryAutoProvisionFromDfs(mobile, password);
+        }
         if (agent == null) {
             return ApiResponse.fail("401", "USER NOT FOUND");
         }
@@ -59,6 +82,76 @@ public class AuthService {
 
         String token = jwt.issue(agent.getMobile(), agent.getCustomerId());
         return ApiResponse.ok(loginProfile(agent, token));
+    }
+
+    /**
+     * If mobile has a DFS wallet (accountDetails or getbalance L4), create local agent.
+     * Local MPIN becomes the password used on this login (until agent-api restart).
+     */
+    private AgentAccount tryAutoProvisionFromDfs(String mobile, String password) {
+        if (!dfs.isEnabled() || !dfs.isPortalMode()) {
+            return null;
+        }
+        String title = "Agent " + mobile;
+        String nid = "";
+        String level = defaultAccountLevel;
+        boolean walletOk = false;
+
+        ObjectNode detailsPayload = dfs.mapper().createObjectNode();
+        detailsPayload.put("mobileNumber", mobile);
+        Map<String, Object> details = dfs.postAppCorporate("/v1/corporate/accountDetails", detailsPayload);
+        if (isSuccess(details)) {
+            walletOk = true;
+            Object dataObj = details.get("data");
+            if (dataObj instanceof Map<?, ?> data) {
+                nid = firstText(data, "nidNo", "cnic", "cnicNumber", "nationalId");
+                String t = firstText(data, "accountTitle", "customerName", "fullName", "name");
+                if (t != null && !t.isBlank()) title = t;
+                String lvl = firstText(data, "accountLevelCode", "levelCode", "accountLevel");
+                if (lvl != null && !lvl.isBlank()) level = lvl.trim();
+            }
+        }
+
+        if (!walletOk) {
+            ObjectNode balPayload = dfs.mapper().createObjectNode();
+            balPayload.put("mobileNumber", mobile);
+            balPayload.put("accountLevelCode", defaultAccountLevel);
+            Map<String, Object> bal = dfs.postAgentCorporate("/agentapp/v1/corporate/getbalance", balPayload);
+            walletOk = isSuccess(bal);
+        }
+
+        if (!walletOk) {
+            log.info("Auto-provision skipped — no DFS wallet for {}", mobile);
+            return null;
+        }
+
+        if (nid == null) nid = "";
+        String nidDigits = nid.replaceAll("\\D", "");
+        AgentAccount created = new AgentAccount(mobile, password, title, nidDigits);
+        created.setAccountLevelCode(level);
+        created.setDeviceVerified(false);
+        store.save(created);
+        log.info("Auto-provisioned agent {} from DFS (level={}, nidLen={})",
+                mobile, level, nidDigits.length());
+        return created;
+    }
+
+    private static boolean isSuccess(Map<String, Object> resp) {
+        if (resp == null) return false;
+        Object code = resp.get("responsecode");
+        if (code == null) code = resp.get("responseCode");
+        return code != null && "000".equals(String.valueOf(code).trim());
+    }
+
+    private static String firstText(Map<?, ?> data, String... keys) {
+        for (String k : keys) {
+            Object v = data.get(k);
+            if (v != null) {
+                String s = String.valueOf(v).trim();
+                if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) return s;
+            }
+        }
+        return "";
     }
 
     public Map<String, Object> updateDevice(ApiEnvelope envelope) {
@@ -119,6 +212,7 @@ public class AuthService {
         if (existing == null) {
             // Default MPIN 1234 until change-mpin; title from mobile for stub
             existing = new AgentAccount(mobile, "1234", "Agent " + mobile, nid);
+            existing.setAccountLevelCode(defaultAccountLevel);
             existing.setImei(imei);
             existing.setDeviceModel(text(p, "deviceModel"));
             store.save(existing);
@@ -183,35 +277,19 @@ public class AuthService {
         data.put("accountTitle", agent.getAccountTitle());
         data.put("accountId", agent.getAccountId());
         data.put("accountNo", agent.getMobile());
-        data.put("currentBalance", agent.getBalance());
-        data.put("levelDescr", "Level 2");
-        data.put("token", token);
-        data.put("accountType", "10");
-        data.put("accountStatusDescr", "Active");
-        data.put("accountStatusId", 1);
-        data.put("biometricallyVerified", "N");
-        // Same payload shape as generateQr — app shows this after login
-        String iban = agent.getIban() != null ? agent.getIban() : "";
-        data.put("qr", iban.isBlank()
-                ? "CAQR|" + agent.getMobile() + "|0"
-                : iban);
-        data.put("iban", agent.getIban());
-        data.put("nidNo", agent.getNidNo());
-        data.put("appUserId", agent.getAppUserId());
-        data.put("dfsId", "CA-" + agent.getCustomerId());
+        data.put("mobileNumber", agent.getMobile());
         data.put("accountLevelCode", agent.getAccountLevelCode());
-        data.put("fatherName", "");
-        data.put("username", agent.getMobile());
-        data.put("selfie", "");
-        data.put("autoLoginToken", "");
-        data.put("email", "");
-        data.put("customerRiskProfile", "");
-        data.put("expiry", "");
+        data.put("token", token);
+        data.put("accessToken", token);
+        // Same payload shape as generateQr — app shows this after login
+        data.put("iban", agent.getIban());
+        data.put("qr", "CAQR|" + agent.getMobile() + "|");
+        data.put("nidNo", agent.getNidNo());
         return data;
     }
 
     private static Map<String, String> opt(String id, String name) {
-        return Map.of("id", id, "name", name, "code", id, "description", name);
+        return Map.of("id", id, "code", id, "name", name, "description", name);
     }
 
     private static String text(JsonNode node, String field) {

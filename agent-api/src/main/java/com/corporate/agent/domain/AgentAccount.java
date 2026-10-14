@@ -17,7 +17,7 @@ public class AgentAccount {
     private String nidNo;
     private String imei;
     private String deviceModel;
-    private String accountLevelCode = "L2";
+    private String accountLevelCode = "L4";
     private double balance;
     private String iban;
     private Instant registeredAt = Instant.now();
