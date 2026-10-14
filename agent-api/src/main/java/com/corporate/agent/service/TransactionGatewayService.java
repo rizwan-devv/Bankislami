@@ -26,11 +26,14 @@ public class TransactionGatewayService {
     private final DfsProxyClient dfs;
     private final AgentStore store;
     private final JwtService jwt;
+    private final DfsAgentIdentityService identity;
 
-    public TransactionGatewayService(DfsProxyClient dfs, AgentStore store, JwtService jwt) {
+    public TransactionGatewayService(
+            DfsProxyClient dfs, AgentStore store, JwtService jwt, DfsAgentIdentityService identity) {
         this.dfs = dfs;
         this.store = store;
         this.jwt = jwt;
+        this.identity = identity;
     }
 
     public Map<String, Object> getAllBanks(String authorization) {
@@ -134,7 +137,8 @@ public class TransactionGatewayService {
     public Map<String, Object> initiateLocalFt(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
             if (dfs.isPortalMode()) {
-                return dfs.postCorporate("/v1/corporate/initiateLocalFT", body);
+                return dfs.postCorporate("/v1/corporate/initiateLocalFT",
+                        enrichFtEnvelope(authorization, body));
             }
             return dfs.postTxn("/transactions/v1/initiateLocalFT", body, authorization);
         }
@@ -155,7 +159,8 @@ public class TransactionGatewayService {
     public Map<String, Object> fundsTransferLocal(String authorization, ApiEnvelope body) {
         if (dfs.isEnabled()) {
             if (dfs.isPortalMode()) {
-                return dfs.postCorporate("/v1/corporate/fundsTransferLocal", body);
+                return dfs.postCorporate("/v1/corporate/fundsTransferLocal",
+                        enrichFtEnvelope(authorization, body));
             }
             return dfs.postTxn("/transactions/v1/fundsTransferLocal", body, authorization);
         }
@@ -214,19 +219,29 @@ public class TransactionGatewayService {
         return stubCashResult();
     }
 
+    /** Portal FT: mobileNumber + nidNo required. */
+    private ApiEnvelope enrichFtEnvelope(String authorization, ApiEnvelope body) {
+        AgentAccount agent = requireAgentWithCnic(authorization, body);
+        ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
+        putIfBlank(payload, "mobileNumber", agent.getMobile());
+        String nid = normalizeNid(agent.getNidNo());
+        payload.put("nidNo", nid);
+        putIfBlank(payload, "fromAccountNid", nid);
+        return copyEnvelope(body, payload);
+    }
+
     /**
      * Mirror Corporate portal IBFT: inject fromAccountNo / fromAccountNid from logged-in agent,
      * normalize beneficiary aliases, default purpose on advice.
      */
     private ApiEnvelope enrichIbftEnvelope(String authorization, ApiEnvelope body, boolean forAdvice) {
-        AgentAccount agent = requireAgent(authorization, body);
+        AgentAccount agent = requireAgentWithCnic(authorization, body);
         ObjectNode payload = dfs.copyPayload(body != null ? body.getPayload() : null);
 
         putIfBlank(payload, "fromAccountNo", agent.getMobile());
-        String nid = digitsOnly(agent.getNidNo());
-        if (nid != null && nid.length() >= 13) {
-            putIfBlank(payload, "fromAccountNid", nid.length() > 13 ? nid.substring(0, 13) : nid);
-        }
+        String nid = normalizeNid(agent.getNidNo());
+        payload.put("fromAccountNid", nid);
+        putIfBlank(payload, "nidNo", nid);
 
         copyFirstAlias(payload, "beneficiaryAccountNo",
                 "accountNo", "toAccountNo", "iban", "beneficiaryIban");
@@ -242,6 +257,10 @@ public class TransactionGatewayService {
             payload.put("purposeOfPayment", purpose);
         }
 
+        return copyEnvelope(body, payload);
+    }
+
+    private ApiEnvelope copyEnvelope(ApiEnvelope body, ObjectNode payload) {
         ApiEnvelope out = new ApiEnvelope();
         if (body != null) {
             out.setChannel(body.getChannel());
@@ -253,6 +272,22 @@ public class TransactionGatewayService {
         }
         out.setPayload(payload);
         return out;
+    }
+
+    private AgentAccount requireAgentWithCnic(String authorization, ApiEnvelope envelope) {
+        AgentAccount agent = requireAgent(authorization, envelope);
+        identity.ensureCnic(agent);
+        if (!DfsAgentIdentityService.hasValidCnic(agent.getNidNo())) {
+            throw new WalletService.UnauthorizedException(
+                    "CNIC missing from login session — please login again");
+        }
+        return agent;
+    }
+
+    private static String normalizeNid(String raw) {
+        String d = digitsOnly(raw);
+        if (d == null) return "";
+        return d.length() > 13 ? d.substring(0, 13) : d;
     }
 
     private AgentAccount requireAgent(String authorization, ApiEnvelope envelope) {

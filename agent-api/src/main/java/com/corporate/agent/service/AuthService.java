@@ -29,6 +29,7 @@ public class AuthService {
     private final AgentStore store;
     private final JwtService jwt;
     private final DfsProxyClient dfs;
+    private final DfsAgentIdentityService identity;
     private final boolean autoProvisionOnLogin;
     private final String defaultAccountLevel;
 
@@ -36,11 +37,13 @@ public class AuthService {
             AgentStore store,
             JwtService jwt,
             DfsProxyClient dfs,
+            DfsAgentIdentityService identity,
             @Value("${agent.auto-provision-on-login:true}") boolean autoProvisionOnLogin,
             @Value("${agent.account-level-code:L4}") String defaultAccountLevel) {
         this.store = store;
         this.jwt = jwt;
         this.dfs = dfs;
+        this.identity = identity;
         this.autoProvisionOnLogin = autoProvisionOnLogin;
         this.defaultAccountLevel = defaultAccountLevel != null && !defaultAccountLevel.isBlank()
                 ? defaultAccountLevel.trim() : "L4";
@@ -63,6 +66,13 @@ public class AuthService {
         }
         if (!password.equals(agent.getPasswordMpin())) {
             return ApiResponse.fail("401", "INVALID CREDENTIALS");
+        }
+
+        // Always refresh CNIC into session (app FT/IBFT require it)
+        identity.ensureCnic(agent);
+        if (!DfsAgentIdentityService.hasValidCnic(agent.getNidNo())) {
+            return ApiResponse.fail("409",
+                    "CNIC missing for this wallet — complete DFS accountDetails / re-approve with CNIC, then login again");
         }
 
         String imei = envelope.getImieNo() != null ? envelope.getImieNo() : "";
@@ -92,24 +102,13 @@ public class AuthService {
         if (!dfs.isEnabled() || !dfs.isPortalMode()) {
             return null;
         }
-        String title = "Agent " + mobile;
-        String nid = "";
-        String level = defaultAccountLevel;
         boolean walletOk = false;
 
         ObjectNode detailsPayload = dfs.mapper().createObjectNode();
         detailsPayload.put("mobileNumber", mobile);
         Map<String, Object> details = dfs.postAppCorporate("/v1/corporate/accountDetails", detailsPayload);
-        if (isSuccess(details)) {
+        if (DfsAgentIdentityService.isSuccess(details)) {
             walletOk = true;
-            Object dataObj = details.get("data");
-            if (dataObj instanceof Map<?, ?> data) {
-                nid = firstText(data, "nidNo", "cnic", "cnicNumber", "nationalId");
-                String t = firstText(data, "accountTitle", "customerName", "fullName", "name");
-                if (t != null && !t.isBlank()) title = t;
-                String lvl = firstText(data, "accountLevelCode", "levelCode", "accountLevel");
-                if (lvl != null && !lvl.isBlank()) level = lvl.trim();
-            }
         }
 
         if (!walletOk) {
@@ -117,7 +116,8 @@ public class AuthService {
             balPayload.put("mobileNumber", mobile);
             balPayload.put("accountLevelCode", defaultAccountLevel);
             Map<String, Object> bal = dfs.postAgentCorporate("/agentapp/v1/corporate/getbalance", balPayload);
-            walletOk = isSuccess(bal);
+            walletOk = DfsAgentIdentityService.isSuccess(bal);
+            details = null;
         }
 
         if (!walletOk) {
@@ -125,33 +125,18 @@ public class AuthService {
             return null;
         }
 
-        if (nid == null) nid = "";
-        String nidDigits = nid.replaceAll("\\D", "");
-        AgentAccount created = new AgentAccount(mobile, password, title, nidDigits);
-        created.setAccountLevelCode(level);
+        AgentAccount created = new AgentAccount(mobile, password, "Agent " + mobile, "");
+        created.setAccountLevelCode(defaultAccountLevel);
         created.setDeviceVerified(false);
+        if (details != null && DfsAgentIdentityService.isSuccess(details)) {
+            identity.applyDetails(created, details);
+        }
+        identity.ensureCnic(created);
         store.save(created);
         log.info("Auto-provisioned agent {} from DFS (level={}, nidLen={})",
-                mobile, level, nidDigits.length());
+                mobile, created.getAccountLevelCode(),
+                created.getNidNo() != null ? created.getNidNo().replaceAll("\\D", "").length() : 0);
         return created;
-    }
-
-    private static boolean isSuccess(Map<String, Object> resp) {
-        if (resp == null) return false;
-        Object code = resp.get("responsecode");
-        if (code == null) code = resp.get("responseCode");
-        return code != null && "000".equals(String.valueOf(code).trim());
-    }
-
-    private static String firstText(Map<?, ?> data, String... keys) {
-        for (String k : keys) {
-            Object v = data.get(k);
-            if (v != null) {
-                String s = String.valueOf(v).trim();
-                if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) return s;
-            }
-        }
-        return "";
     }
 
     public Map<String, Object> updateDevice(ApiEnvelope envelope) {
@@ -190,6 +175,7 @@ public class AuthService {
         agent.setImei(imei);
         agent.setDeviceModel(text(p, "deviceModel"));
         agent.setDeviceVerified(true);
+        identity.ensureCnic(agent);
         store.save(agent);
 
         String token = jwt.issue(agent.getMobile(), agent.getCustomerId());
@@ -210,11 +196,15 @@ public class AuthService {
 
         AgentAccount existing = store.find(mobile).orElse(null);
         if (existing == null) {
-            // Default MPIN 1234 until change-mpin; title from mobile for stub
-            existing = new AgentAccount(mobile, "1234", "Agent " + mobile, nid);
+            String nidDigits = DfsAgentIdentityService.digitsOnly(nid);
+            existing = new AgentAccount(mobile, "1234", "Agent " + mobile,
+                    nidDigits != null ? nidDigits : "");
             existing.setAccountLevelCode(defaultAccountLevel);
             existing.setImei(imei);
             existing.setDeviceModel(text(p, "deviceModel"));
+            if (!DfsAgentIdentityService.hasValidCnic(existing.getNidNo())) {
+                identity.ensureCnic(existing);
+            }
             store.save(existing);
         }
 
@@ -248,11 +238,13 @@ public class AuthService {
             return ApiResponse.fail("401", "USER NOT FOUND");
         }
         agent.setDeviceVerified(true);
+        identity.ensureCnic(agent);
         store.save(agent);
         return ApiResponse.ok(Map.of(
                 "mobileNumber", agent.getMobile(),
                 "status", "REGISTERED",
-                "defaultMpin", "1234"
+                "defaultMpin", "1234",
+                "nidNo", agent.getNidNo() != null ? agent.getNidNo() : ""
         ));
     }
 
@@ -272,6 +264,9 @@ public class AuthService {
     }
 
     private Map<String, Object> loginProfile(AgentAccount agent, String token) {
+        String cnic = agent.getNidNo() != null ? agent.getNidNo().replaceAll("\\D", "") : "";
+        if (cnic.length() > 13) cnic = cnic.substring(0, 13);
+
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("customerId", agent.getCustomerId());
         data.put("accountTitle", agent.getAccountTitle());
@@ -281,10 +276,13 @@ public class AuthService {
         data.put("accountLevelCode", agent.getAccountLevelCode());
         data.put("token", token);
         data.put("accessToken", token);
-        // Same payload shape as generateQr — app shows this after login
         data.put("iban", agent.getIban());
         data.put("qr", "CAQR|" + agent.getMobile() + "|");
-        data.put("nidNo", agent.getNidNo());
+        // App FT/IBFT session checks — send every common field name
+        data.put("nidNo", cnic);
+        data.put("cnic", cnic);
+        data.put("cnicNumber", cnic);
+        data.put("nationalId", cnic);
         return data;
     }
 
