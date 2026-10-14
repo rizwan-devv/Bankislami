@@ -221,7 +221,7 @@ public class TransactionGatewayService {
 
     /**
      * Same shape as Corporate portal LiveTransferService.ftInitiate / fundsTransferLocal.
-     * DFS InitiateLocalFTRequest: accountType, amount, nidNo, mobileNumber, accountNo, type (+ confirm extras).
+     * FundTransferRequest rejects authIdResponse/type — strip them or app confirm fails (often shown as session missing).
      */
     private ApiEnvelope enrichFtEnvelope(String authorization, ApiEnvelope body) {
         ObjectNode src = dfs.copyPayload(body != null ? body.getPayload() : null);
@@ -231,11 +231,9 @@ public class TransactionGatewayService {
         putCopy(payload, src, "accountNo");
         putCopy(payload, src, "accountType");
         putCopy(payload, src, "amount");
-        putCopy(payload, src, "type");
         putCopy(payload, src, "mpin");
         putCopy(payload, src, "transPurposeId");
         putCopy(payload, src, "narration");
-        putCopy(payload, src, "authIdResponse");
 
         if (!ids.mobile.isBlank()) payload.put("mobileNumber", ids.mobile);
         else putCopy(payload, src, "mobileNumber");
