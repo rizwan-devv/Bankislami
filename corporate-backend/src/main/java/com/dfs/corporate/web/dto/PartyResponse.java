@@ -128,14 +128,7 @@ public class PartyResponse {
         r.businessLicenseDetails = p.getBusinessLicenseDetails();
         r.purposeOfAccount = p.getPurposeOfAccount();
         r.intendedRelationship = p.getIntendedRelationship();
-        r.termsAccepted = p.getTermsAccepted();
-        r.acknowledgmentSentAt = p.getAcknowledgmentSentAt();
-        r.acknowledgmentExpiresAt = p.getAcknowledgmentExpiresAt();
-        r.acknowledgedAt = p.getAcknowledgedAt();
-        r.customerAcknowledged = p.getAcknowledgedAt() != null;
-        r.acknowledgmentPending = p.getAcknowledgedAt() == null
-                && p.getAcknowledgmentSentAt() != null
-                && p.getStatus() == PartyStatus.PENDING_APPROVAL;        r.clientIp = p.getClientIp();
+        r.termsAccepted = p.getTermsAccepted();        r.clientIp = p.getClientIp();
         r.geoLocation = p.getGeoLocation();
         r.sanctionsStatus = p.getSanctionsStatus();
         r.identityVerificationStatus = p.getIdentityVerificationStatus();

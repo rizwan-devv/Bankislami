@@ -1,7 +1,9 @@
 package com.dfs.corporate.service;
 
 import com.dfs.corporate.domain.Party;
+import com.dfs.corporate.domain.PartyAcknowledgment;
 import com.dfs.corporate.domain.PartyStatus;
+import com.dfs.corporate.repository.PartyAcknowledgmentRepository;
 import com.dfs.corporate.repository.PartyRepository;
 import com.dfs.corporate.security.AccountPrincipal;
 import com.dfs.corporate.web.dto.AcknowledgmentPublicResponse;
@@ -22,6 +24,7 @@ import java.util.Map;
 /**
  * Pre-approval acknowledgment: back office emails a secure link to the registered
  * applicant email; the account holder confirms before Approve is allowed.
+ * Stored in party_acknowledgments (not on parties — MySQL row size limit).
  */
 @Service
 public class CustomerAcknowledgmentService {
@@ -30,6 +33,7 @@ public class CustomerAcknowledgmentService {
     private static final int LINK_VALID_DAYS = 7;
 
     private final PartyRepository partyRepository;
+    private final PartyAcknowledgmentRepository acknowledgmentRepository;
     private final MailService mailService;
     private final String frontendBaseUrl;
     private final String brandName;
@@ -37,10 +41,12 @@ public class CustomerAcknowledgmentService {
 
     public CustomerAcknowledgmentService(
             PartyRepository partyRepository,
+            PartyAcknowledgmentRepository acknowledgmentRepository,
             MailService mailService,
             @Value("${app.frontend-base-url}") String frontendBaseUrl,
             @Value("${app.brand-name:Bank Islami Corporate}") String brandName) {
         this.partyRepository = partyRepository;
+        this.acknowledgmentRepository = acknowledgmentRepository;
         this.mailService = mailService;
         this.frontendBaseUrl = frontendBaseUrl.endsWith("/")
                 ? frontendBaseUrl.substring(0, frontendBaseUrl.length() - 1)
@@ -59,25 +65,33 @@ public class CustomerAcknowledgmentService {
         if (party.getEmail() == null || party.getEmail().isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Party has no email address");
         }
-        if (party.getAcknowledgedAt() != null) {
+
+        PartyAcknowledgment ack = acknowledgmentRepository.findByPartyId(partyId).orElseGet(() -> {
+            PartyAcknowledgment created = new PartyAcknowledgment();
+            created.setPartyId(partyId);
+            created.setCreatedAt(Instant.now());
+            return created;
+        });
+
+        if (ack.getAcknowledgedAt() != null) {
             Map<String, Object> already = new HashMap<>();
             already.put("sent", false);
             already.put("alreadyAcknowledged", true);
-            already.put("acknowledgedAt", party.getAcknowledgedAt());
+            already.put("acknowledgedAt", ack.getAcknowledgedAt());
             already.put("email", party.getEmail());
             already.put("message", "Customer already acknowledged this application");
             return already;
         }
 
-        String token = newToken();
         Instant now = Instant.now();
-        party.setAcknowledgmentToken(token);
-        party.setAcknowledgmentSentAt(now);
-        party.setAcknowledgmentExpiresAt(now.plus(LINK_VALID_DAYS, ChronoUnit.DAYS));
-        party.setAcknowledgmentIp(null);
-        partyRepository.save(party);
+        ack.setToken(newToken());
+        ack.setSentAt(now);
+        ack.setExpiresAt(now.plus(LINK_VALID_DAYS, ChronoUnit.DAYS));
+        ack.setClientIp(null);
+        ack.setUpdatedAt(now);
+        acknowledgmentRepository.save(ack);
 
-        String link = frontendBaseUrl + "/acknowledge/" + token;
+        String link = frontendBaseUrl + "/acknowledge/" + ack.getToken();
         String entityLabel = party.getBusinessName() != null && !party.getBusinessName().isBlank()
                 ? party.getBusinessName()
                 : party.getFullName();
@@ -108,8 +122,8 @@ public class CustomerAcknowledgmentService {
         out.put("sent", true);
         out.put("alreadyAcknowledged", false);
         out.put("email", party.getEmail());
-        out.put("acknowledgmentSentAt", party.getAcknowledgmentSentAt());
-        out.put("acknowledgmentExpiresAt", party.getAcknowledgmentExpiresAt());
+        out.put("acknowledgmentSentAt", ack.getSentAt());
+        out.put("acknowledgmentExpiresAt", ack.getExpiresAt());
         out.put("message", "Acknowledgment email sent to " + party.getEmail());
         return out;
     }
@@ -121,17 +135,23 @@ public class CustomerAcknowledgmentService {
             res.setMessage("This acknowledgment link is invalid.");
             return res;
         }
-        Party party = partyRepository.findByAcknowledgmentToken(token.trim()).orElse(null);
-        if (party == null) {
+        PartyAcknowledgment ack = acknowledgmentRepository.findByToken(token.trim()).orElse(null);
+        if (ack == null) {
             res.setStatus("INVALID");
             res.setMessage("This acknowledgment link is invalid or has already been used.");
             return res;
         }
-        fillPartySummary(res, party);
-        if (party.getAcknowledgedAt() != null) {
+        Party party = partyRepository.findById(ack.getPartyId()).orElse(null);
+        if (party == null) {
+            res.setStatus("INVALID");
+            res.setMessage("This acknowledgment link is invalid.");
+            return res;
+        }
+        fillPartySummary(res, party, ack);
+        if (ack.getAcknowledgedAt() != null) {
             res.setStatus("ACKNOWLEDGED");
             res.setMessage("Thank you. Your acknowledgment has already been recorded.");
-            res.setAcknowledgedAt(party.getAcknowledgedAt());
+            res.setAcknowledgedAt(ack.getAcknowledgedAt());
             res.setCanConfirm(false);
             return res;
         }
@@ -141,8 +161,7 @@ public class CustomerAcknowledgmentService {
             res.setCanConfirm(false);
             return res;
         }
-        if (party.getAcknowledgmentExpiresAt() != null
-                && party.getAcknowledgmentExpiresAt().isBefore(Instant.now())) {
+        if (ack.getExpiresAt() != null && ack.getExpiresAt().isBefore(Instant.now())) {
             res.setStatus("EXPIRED");
             res.setMessage("This acknowledgment link has expired. Please ask the bank to send a new email.");
             res.setCanConfirm(false);
@@ -160,14 +179,19 @@ public class CustomerAcknowledgmentService {
         if (!preview.isCanConfirm()) {
             return preview;
         }
-        Party party = partyRepository.findByAcknowledgmentToken(token.trim())
+        PartyAcknowledgment ack = acknowledgmentRepository.findByToken(token.trim())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Invalid acknowledgment link"));
-        party.setAcknowledgedAt(Instant.now());
+        Party party = partyRepository.findById(ack.getPartyId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Party not found"));
+
+        Instant now = Instant.now();
+        ack.setAcknowledgedAt(now);
         if (clientIp != null && !clientIp.isBlank()) {
-            party.setAcknowledgmentIp(clientIp.length() > 64 ? clientIp.substring(0, 64) : clientIp);
+            ack.setClientIp(clientIp.length() > 64 ? clientIp.substring(0, 64) : clientIp);
         }
-        party.setAcknowledgmentToken(null);
-        partyRepository.save(party);
+        ack.setToken(null);
+        ack.setUpdatedAt(now);
+        acknowledgmentRepository.save(ack);
 
         mailService.send(
                 party.getEmail(),
@@ -186,28 +210,38 @@ public class CustomerAcknowledgmentService {
                         brandName));
 
         AcknowledgmentPublicResponse res = basePublic();
-        fillPartySummary(res, party);
+        fillPartySummary(res, party, ack);
         res.setStatus("ACKNOWLEDGED");
         res.setMessage("Thank you. Your acknowledgment has been recorded. The bank may now approve your application.");
-        res.setAcknowledgedAt(party.getAcknowledgedAt());
+        res.setAcknowledgedAt(ack.getAcknowledgedAt());
         res.setCanConfirm(false);
         return res;
     }
 
     public void assertAcknowledged(Party party) {
-        if (party.getAcknowledgedAt() == null) {
+        PartyAcknowledgment ack = acknowledgmentRepository.findByPartyId(party.getId()).orElse(null);
+        if (ack == null || ack.getAcknowledgedAt() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST,
                     "Cannot approve: customer has not acknowledged via the emailed confirmation link");
         }
     }
 
     public void applyToResponse(Party party, PartyResponse res) {
-        res.setAcknowledgmentSentAt(party.getAcknowledgmentSentAt());
-        res.setAcknowledgmentExpiresAt(party.getAcknowledgmentExpiresAt());
-        res.setAcknowledgedAt(party.getAcknowledgedAt());
-        res.setCustomerAcknowledged(party.getAcknowledgedAt() != null);
-        res.setAcknowledgmentPending(party.getAcknowledgedAt() == null
-                && party.getAcknowledgmentSentAt() != null
+        PartyAcknowledgment ack = acknowledgmentRepository.findByPartyId(party.getId()).orElse(null);
+        if (ack == null) {
+            res.setAcknowledgmentSentAt(null);
+            res.setAcknowledgmentExpiresAt(null);
+            res.setAcknowledgedAt(null);
+            res.setCustomerAcknowledged(false);
+            res.setAcknowledgmentPending(false);
+            return;
+        }
+        res.setAcknowledgmentSentAt(ack.getSentAt());
+        res.setAcknowledgmentExpiresAt(ack.getExpiresAt());
+        res.setAcknowledgedAt(ack.getAcknowledgedAt());
+        res.setCustomerAcknowledged(ack.getAcknowledgedAt() != null);
+        res.setAcknowledgmentPending(ack.getAcknowledgedAt() == null
+                && ack.getSentAt() != null
                 && party.getStatus() == PartyStatus.PENDING_APPROVAL);
     }
 
@@ -218,13 +252,13 @@ public class CustomerAcknowledgmentService {
         return res;
     }
 
-    private void fillPartySummary(AcknowledgmentPublicResponse res, Party party) {
+    private void fillPartySummary(AcknowledgmentPublicResponse res, Party party, PartyAcknowledgment ack) {
         res.setBusinessName(party.getBusinessName() != null && !party.getBusinessName().isBlank()
                 ? party.getBusinessName()
                 : party.getFullName());
         res.setTrackingId(party.getTrackingId());
         res.setEmailMasked(maskEmail(party.getEmail()));
-        res.setExpiresAt(party.getAcknowledgmentExpiresAt());
+        res.setExpiresAt(ack.getExpiresAt());
     }
 
     private String newToken() {
