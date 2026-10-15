@@ -31,6 +31,7 @@ public class BranchOpsService {
     private final PartyRepository partyRepository;
     private final AccountRepository accountRepository;
     private final BranchCashDfsClient cashClient;
+    private final LiveTransferService liveTransferService;
     private final ObjectMapper objectMapper;
 
     public BranchOpsService(CorporateXpinRepository xpinRepository,
@@ -39,6 +40,7 @@ public class BranchOpsService {
                             PartyRepository partyRepository,
                             AccountRepository accountRepository,
                             BranchCashDfsClient cashClient,
+                            LiveTransferService liveTransferService,
                             ObjectMapper objectMapper) {
         this.xpinRepository = xpinRepository;
         this.billRepository = billRepository;
@@ -46,6 +48,7 @@ public class BranchOpsService {
         this.partyRepository = partyRepository;
         this.accountRepository = accountRepository;
         this.cashClient = cashClient;
+        this.liveTransferService = liveTransferService;
         this.objectMapper = objectMapper;
     }
 
@@ -222,26 +225,28 @@ public class BranchOpsService {
 
     public Map<String, Object> cashIn(AccountPrincipal principal, String accountNo, String amount,
                                       String narration, String depositorNid, String depositorName, String depositorDob) {
-        Account agent = requireWallet(principal);
+        Account wallet = requireWallet(principal);
         String customer = requireAccount(accountNo);
         String amt = money(amount);
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("nidNo", agent.getDfsCnic());
-        payload.put("mobileNumber", agent.getDfsMobile());
-        payload.put("accountNo", customer);
-        payload.put("amount", amt);
-        payload.put("transPurposeId", cashClient.transPurposeId());
-        payload.put("mpin", agent.getDfsMpin());
-        payload.put("narration", narration == null ? "" : narration.trim());
-        payload.put("bvs", "N");
-        payload.put("cashInType", "W");
-        payload.put("depositorNid", requireNid(depositorNid));
-        payload.put("depositorName", depositorName == null ? "" : depositorName.trim());
-        payload.put("depositorDob", depositorDob == null ? "" : depositorDob.trim());
-        Map<String, Object> out = view(cashClient.internalCashIn(imei(agent), payload));
-        out.put("fromAccountNo", agent.getDfsMobile());
-        out.put("product", "CASH_IN");
-        return out;
+        LiveFtInitiateRequest init = new LiveFtInitiateRequest();
+        init.setAccountNo(customer);
+        init.setAmount(amt);
+        init.setAccountType("W");
+        DfsPortalTxnResponse started = liveTransferService.ftInitiate(principal, init);
+        if (!"000".equals(started.getResponsecode())) {
+            return cashView(started, wallet.getDfsMobile(), depositorName);
+        }
+        String beneficiary = firstText(depositorName, titleOf(started));
+        LiveFtConfirmRequest conf = new LiveFtConfirmRequest();
+        conf.setAccountNo(customer);
+        conf.setAmount(amt);
+        conf.setAccountType("W");
+        conf.setMpin(wallet.getDfsMpin());
+        conf.setNarration(narration == null || narration.isBlank() ? "Cash in" : narration.trim());
+        conf.setBeneficiaryName(beneficiary);
+        DfsPortalTxnResponse done = liveTransferService.ftConfirm(principal, conf);
+        done.setProduct("CASH_IN");
+        return cashView(done, wallet.getDfsMobile(), beneficiary);
     }
 
     public Map<String, Object> cashOutOtp(AccountPrincipal principal, String mobileNumber) {
@@ -321,14 +326,6 @@ public class BranchOpsService {
         return digits == null ? "" : digits;
     }
 
-    private static String requireNid(String raw) {
-        String digits = IdentityFormats.cnicDigits(raw);
-        if (digits == null || digits.length() != 13) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Depositor CNIC must be 13 digits");
-        }
-        return digits;
-    }
-
     private static String requireAccount(String raw) {
         String digits = IdentityFormats.phoneDigits(raw);
         if (digits == null || digits.length() < 10) {
@@ -350,6 +347,51 @@ public class BranchOpsService {
         } catch (NumberFormatException ex) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "amount must be numeric");
         }
+    }
+
+    private Map<String, Object> cashView(DfsPortalTxnResponse response, String from, String beneficiary) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("responsecode", response.getResponsecode() != null ? response.getResponsecode() : "");
+        out.put("messages", response.getMessages() != null ? response.getMessages() : "");
+        out.put("fromAccountNo", from);
+        out.put("product", "CASH_IN");
+        if (response.getPortalTxnRef() != null) {
+            out.put("portalTxnRef", response.getPortalTxnRef());
+        }
+        Map<String, Object> data = new LinkedHashMap<>();
+        if (response.getData() != null && response.getData().isObject()) {
+            data.putAll(objectMapper.convertValue(response.getData(), Map.class));
+        }
+        if (beneficiary != null && !beneficiary.isBlank()) {
+            data.put("beneficiaryName", beneficiary.trim());
+        }
+        if (!data.isEmpty()) {
+            out.put("data", data);
+        }
+        return out;
+    }
+
+    private static String titleOf(DfsPortalTxnResponse response) {
+        JsonNode data = response.getData();
+        if (data == null || !data.isObject()) {
+            return null;
+        }
+        for (String key : new String[]{"beneficiaryTitle", "accountTitle", "title", "name"}) {
+            if (data.has(key) && !data.get(key).isNull()) {
+                String value = data.get(key).asText("").trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String firstText(String preferred, String fallback) {
+        if (preferred != null && !preferred.isBlank()) {
+            return preferred.trim();
+        }
+        return fallback;
     }
 
     private Map<String, Object> view(JsonNode root) {

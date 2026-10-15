@@ -63,7 +63,7 @@ export function BranchHomePage() {
       <form className="desk-card" onSubmit={saveWallet} style={{ marginBottom: '1rem' }}>
         <p className="desk-kicker">DFS wallet</p>
         <h3 className="desk-card-title">Branch agent account</h3>
-        <p className="muted desk-card-lead">Used as the agent on cash-in and cash-out, and as the payer on IBFT and live bills.</p>
+        <p className="muted desk-card-lead">Cash in pays the customer from this wallet. Fund transfer, IBFT, and bills use it too. Cash out still needs the customer OTP.</p>
         <div className="form-row"><label>Mobile</label><input value={mobile} onChange={(e) => setMobile(e.target.value)} required /></div>
         <div className="form-row"><label>CNIC</label><input value={cnic} onChange={(e) => setCnic(e.target.value)} required /></div>
         <div className="form-row"><label>MPIN</label><input type="password" value={mpin} onChange={(e) => setMpin(e.target.value)} required placeholder="Stored for cash-in" /></div>
@@ -86,7 +86,7 @@ export function BranchHomePage() {
           <span className="desk-tile-icon" aria-hidden>↓</span>
           <span className="desk-tile-body">
             <strong>Cash In</strong>
-            <span className="muted">Branch wallet to customer · no OTP</span>
+            <span className="muted">Saved wallet pays the customer</span>
           </span>
           <span className="desk-tile-arrow" aria-hidden>→</span>
         </Link>
