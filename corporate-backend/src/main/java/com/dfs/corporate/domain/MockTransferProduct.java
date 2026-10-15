@@ -4,5 +4,7 @@ public enum MockTransferProduct {
     FT,
     IBFT,
     UBP,
-    RAAST
+    RAAST,
+    CASH_IN,
+    CASH_OUT
 }

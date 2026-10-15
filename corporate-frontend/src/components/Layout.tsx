@@ -151,6 +151,10 @@ export function Layout() {
                     <span className="portal-link-icon">▤</span>
                     Bill pay
                   </NavLink>
+                  <NavLink to="/branch/history" className="portal-link">
+                    <span className="portal-link-icon">☰</span>
+                    History
+                  </NavLink>
                   <NavLink to="/branch/xpin" className="portal-link">
                     <span className="portal-link-icon">◇</span>
                     Enter XPin

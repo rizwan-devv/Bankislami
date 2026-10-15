@@ -122,6 +122,14 @@ export function BranchHomePage() {
           </span>
           <span className="desk-tile-arrow" aria-hidden>→</span>
         </Link>
+        <Link className="desk-tile" to="/branch/history">
+          <span className="desk-tile-icon" aria-hidden>☰</span>
+          <span className="desk-tile-body">
+            <strong>History</strong>
+            <span className="muted">Recent cash in, cash out, transfers, and bills</span>
+          </span>
+          <span className="desk-tile-arrow" aria-hidden>→</span>
+        </Link>
         <Link className="desk-tile" to="/branch/xpin">
           <span className="desk-tile-icon" aria-hidden>⬡</span>
           <span className="desk-tile-body">

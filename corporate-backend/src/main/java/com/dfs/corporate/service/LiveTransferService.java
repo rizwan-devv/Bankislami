@@ -171,7 +171,7 @@ public class LiveTransferService {
         DfsPortalTxnResponse resp = wrap("IBFT", from, call(() -> txnClient.ibftAdvice(payload)));
         persist(party, principal, MockTransferProduct.IBFT, req.getAmount(),
                 req.getBeneficiaryAccountNo(), null, req.getBeneficiaryName(),
-                req.getNotes(), resp);
+                req.getNotes(), resp, from);
         return resp;
     }
 
@@ -208,6 +208,8 @@ public class LiveTransferService {
         t.setAmount(parseAmount(req.getAmount()));
         t.setUbpCompany(req.getUtilityCompanyCode());
         t.setConsumerNumber(req.getConsumerNo());
+        t.setMobile(from);
+        t.setAccountNumber(req.getConsumerNo().trim());
         t.setBeneficiaryName(trim(req.getBeneficiaryName()));
         t.setNotes(trim(req.getNotes()));
         applyStatus(t, resp);
@@ -265,7 +267,7 @@ public class LiveTransferService {
         conf.put("narration", note);
         DfsPortalTxnResponse done = wrap("CASH_OUT", payerMobile, call(() -> txnClient.fundsTransferLocal(conf)));
         String title = titleOf(started);
-        persist(party, principal, MockTransferProduct.FT, amt, branchMobile, null, title, note, done);
+        persist(party, principal, MockTransferProduct.CASH_OUT, amt, branchMobile, null, title, note, done, payerMobile);
         done.setProduct("CASH_OUT");
         ObjectNode data = done.getData() != null && done.getData().isObject()
                 ? (ObjectNode) done.getData()
@@ -294,6 +296,11 @@ public class LiveTransferService {
 
     @Transactional
     public DfsPortalTxnResponse ftConfirm(AccountPrincipal principal, LiveFtConfirmRequest req) {
+        return ftConfirm(principal, req, MockTransferProduct.FT);
+    }
+
+    @Transactional
+    public DfsPortalTxnResponse ftConfirm(AccountPrincipal principal, LiveFtConfirmRequest req, MockTransferProduct product) {
         Party party = requireActiveParty(principal);
         String mobile = requireMobile(principal, party);
         String nid = requireNid(principal, party);
@@ -313,8 +320,8 @@ public class LiveTransferService {
         payload.put("narration", blankToEmpty(req.getNarration()));
 
         DfsPortalTxnResponse resp = wrap("FT", mobile, call(() -> txnClient.fundsTransferLocal(payload)));
-        persist(party, principal, MockTransferProduct.FT, req.getAmount(),
-                req.getAccountNo(), null, req.getBeneficiaryName(), req.getNarration(), resp);
+        persist(party, principal, product, req.getAmount(),
+                req.getAccountNo(), null, req.getBeneficiaryName(), req.getNarration(), resp, mobile);
         return resp;
     }
 
@@ -350,10 +357,11 @@ public class LiveTransferService {
 
     private void persist(Party party, AccountPrincipal principal, MockTransferProduct product,
                          String amount, String accountNumber, String bankName,
-                         String beneficiaryName, String notes, DfsPortalTxnResponse resp) {
+                         String beneficiaryName, String notes, DfsPortalTxnResponse resp, String fromMobile) {
         MockTransfer t = base(party, principal, product);
         t.setAmount(parseAmount(amount));
         t.setAccountNumber(trim(accountNumber));
+        t.setMobile(trim(fromMobile));
         t.setBankName(trim(bankName));
         t.setBeneficiaryName(trim(beneficiaryName));
         t.setNotes(trim(notes));

@@ -31,6 +31,7 @@ public class BranchOpsService {
     private final AccountRepository accountRepository;
     private final BranchCashDfsClient cashClient;
     private final LiveTransferService liveTransferService;
+    private final MockTransferRepository transferRepository;
     private final ObjectMapper objectMapper;
 
     public BranchOpsService(CorporateXpinRepository xpinRepository,
@@ -40,6 +41,7 @@ public class BranchOpsService {
                             AccountRepository accountRepository,
                             BranchCashDfsClient cashClient,
                             LiveTransferService liveTransferService,
+                            MockTransferRepository transferRepository,
                             ObjectMapper objectMapper) {
         this.xpinRepository = xpinRepository;
         this.billRepository = billRepository;
@@ -48,6 +50,7 @@ public class BranchOpsService {
         this.accountRepository = accountRepository;
         this.cashClient = cashClient;
         this.liveTransferService = liveTransferService;
+        this.transferRepository = transferRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -243,7 +246,7 @@ public class BranchOpsService {
         conf.setMpin(wallet.getDfsMpin());
         conf.setNarration(narration == null || narration.isBlank() ? "Cash in" : narration.trim());
         conf.setBeneficiaryName(beneficiary);
-        DfsPortalTxnResponse done = liveTransferService.ftConfirm(principal, conf);
+        DfsPortalTxnResponse done = liveTransferService.ftConfirm(principal, conf, MockTransferProduct.CASH_IN);
         done.setProduct("CASH_IN");
         return cashView(done, wallet.getDfsMobile(), beneficiary, "CASH_IN", null);
     }
@@ -270,6 +273,83 @@ public class BranchOpsService {
         DfsPortalTxnResponse done = liveTransferService.cashOutToBranch(
                 principal, customer, cnic, mpin, amount, narration);
         return cashView(done, customer, null, "CASH_OUT", wallet.getDfsMobile());
+    }
+
+    public List<Map<String, Object>> history(AccountPrincipal principal) {
+        requireBranch(principal);
+        if (principal.getPartyId() == null) {
+            return List.of();
+        }
+        String branchMobile = accountRepository.findByEmailIgnoreCase(principal.getUsername())
+                .map(Account::getDfsMobile)
+                .orElse(null);
+        return transferRepository.findByPartyIdOrderByCreatedAtDesc(principal.getPartyId()).stream()
+                .limit(100)
+                .map(row -> historyRow(row, branchMobile))
+                .toList();
+    }
+
+    private Map<String, Object> historyRow(MockTransfer row, String branchMobile) {
+        String type = historyType(row);
+        String from = row.getMobile();
+        String to = "UBP".equals(type) && row.getConsumerNumber() != null
+                ? row.getConsumerNumber()
+                : row.getAccountNumber();
+        if ((from == null || from.isBlank()) && !"CASH_OUT".equals(type)) {
+            from = branchMobile;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("at", row.getCreatedAt());
+        out.put("type", type);
+        out.put("typeLabel", historyLabel(type));
+        out.put("fromAccount", blank(from));
+        out.put("toAccount", blank(to));
+        out.put("amount", row.getAmount());
+        out.put("status", row.getStatus());
+        out.put("statusLabel", statusLabel(row.getStatus()));
+        out.put("reference", row.getMockTxnRef());
+        out.put("detail", firstText(row.getBeneficiaryName(), row.getUbpCompany()));
+        return out;
+    }
+
+    private static String historyType(MockTransfer row) {
+        String type = row.getProductType() == null ? "FT" : row.getProductType().name();
+        String notes = row.getNotes() == null ? "" : row.getNotes().trim();
+        if ("FT".equals(type) && "cash in".equalsIgnoreCase(notes)) {
+            return "CASH_IN";
+        }
+        if ("FT".equals(type) && "cash out".equalsIgnoreCase(notes)) {
+            return "CASH_OUT";
+        }
+        return type;
+    }
+
+    private static String historyLabel(String type) {
+        return switch (type) {
+            case "CASH_IN" -> "Cash in";
+            case "CASH_OUT" -> "Cash out";
+            case "FT" -> "Fund transfer";
+            case "IBFT" -> "IBFT";
+            case "UBP" -> "Bill";
+            default -> type;
+        };
+    }
+
+    private static String statusLabel(String status) {
+        if (status == null || status.isBlank()) {
+            return "";
+        }
+        if ("LIVE_SUCCESS".equals(status) || "MOCK_SUCCESS".equals(status)) {
+            return "Success";
+        }
+        if (status.startsWith("LIVE_FAIL")) {
+            return "Failed";
+        }
+        return status;
+    }
+
+    private static String blank(String value) {
+        return value == null || value.isBlank() ? "" : value.trim();
     }
 
     private Account requireWallet(AccountPrincipal principal) {

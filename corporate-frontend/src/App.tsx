@@ -41,6 +41,7 @@ import { BranchCashOutPage } from './pages/branch/BranchCashOutPage';
 import { BranchIbftPage } from './pages/branch/BranchIbftPage';
 import { BranchFtPage } from './pages/branch/BranchFtPage';
 import { BranchLiveBillPage } from './pages/branch/BranchLiveBillPage';
+import { BranchHistoryPage } from './pages/branch/BranchHistoryPage';
 import { AcknowledgePage } from './pages/AcknowledgePage';
 import { ThemeProvider } from './theme/ThemeContext';
 
@@ -94,6 +95,7 @@ export default function App() {
               <Route path="/branch/ft" element={<BranchFtPage />} />
               <Route path="/branch/ibft" element={<BranchIbftPage />} />
               <Route path="/branch/live-bill" element={<BranchLiveBillPage />} />
+              <Route path="/branch/history" element={<BranchHistoryPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

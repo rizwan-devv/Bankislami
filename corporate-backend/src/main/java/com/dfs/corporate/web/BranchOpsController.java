@@ -90,6 +90,11 @@ public class BranchOpsController {
                 body.get("depositorDob"));
     }
 
+    @GetMapping("/history")
+    public List<Map<String, Object>> history(@AuthenticationPrincipal AccountPrincipal principal) {
+        return branchOpsService.history(principal);
+    }
+
     @PostMapping("/cash-out/otp")
     public Map<String, Object> cashOutOtp(
             @AuthenticationPrincipal AccountPrincipal principal,
