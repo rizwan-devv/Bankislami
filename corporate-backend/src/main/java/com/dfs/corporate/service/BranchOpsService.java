@@ -214,10 +214,10 @@ public class BranchOpsService {
         return walletView(account);
     }
 
-    public Map<String, Object> cashInInquiry(AccountPrincipal principal, String accountNo) {
+    public Map<String, Object> cashInInquiry(AccountPrincipal principal, String accountNo, String depositorNid) {
         Account agent = requireWallet(principal);
         String customer = requireAccount(accountNo);
-        return view(cashClient.cashInInquiry(imei(agent), customer));
+        return view(cashClient.cashInInquiry(imei(agent), customer, nidOrBlank(depositorNid)));
     }
 
     public Map<String, Object> cashIn(AccountPrincipal principal, String accountNo, String amount,
@@ -235,8 +235,7 @@ public class BranchOpsService {
         payload.put("narration", narration == null ? "" : narration.trim());
         payload.put("bvs", "N");
         payload.put("cashInType", "W");
-        payload.put("depositorNid", IdentityFormats.cnicDigits(depositorNid) != null
-                ? IdentityFormats.cnicDigits(depositorNid) : "");
+        payload.put("depositorNid", requireNid(depositorNid));
         payload.put("depositorName", depositorName == null ? "" : depositorName.trim());
         payload.put("depositorDob", depositorDob == null ? "" : depositorDob.trim());
         Map<String, Object> out = view(cashClient.internalCashIn(imei(agent), payload));
@@ -315,6 +314,19 @@ public class BranchOpsService {
     private String imei(Account account) {
         return account.getDfsImei() != null && !account.getDfsImei().isBlank()
                 ? account.getDfsImei() : cashClient.defaultImei();
+    }
+
+    private static String nidOrBlank(String raw) {
+        String digits = IdentityFormats.cnicDigits(raw);
+        return digits == null ? "" : digits;
+    }
+
+    private static String requireNid(String raw) {
+        String digits = IdentityFormats.cnicDigits(raw);
+        if (digits == null || digits.length() != 13) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Depositor CNIC must be 13 digits");
+        }
+        return digits;
     }
 
     private static String requireAccount(String raw) {

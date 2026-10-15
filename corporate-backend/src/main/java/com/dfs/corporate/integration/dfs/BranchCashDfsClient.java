@@ -58,10 +58,10 @@ public class BranchCashDfsClient {
         return transPurposeId;
     }
 
-    public JsonNode cashInInquiry(String imei, String customerAccount) {
+    public JsonNode cashInInquiry(String imei, String customerAccount, String depositorNid) {
         ObjectNode payload = mapper.createObjectNode();
         payload.put("accountNo", customerAccount);
-        payload.put("depositorNid", "");
+        payload.put("depositorNid", depositorNid == null ? "" : depositorNid);
         return post(agentBase + "/agentapp/v1/customer/cashInInquiry", envelope(imei, payload, true, false));
     }
 

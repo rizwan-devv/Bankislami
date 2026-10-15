@@ -65,6 +65,10 @@ export function BranchCashOutPage() {
         token: session.token,
         body: JSON.stringify({ accountNo, amount, narration, otpId, otpPin }),
       });
+      if (r.responsecode && r.responsecode !== '000' && r.responsecode !== '00') {
+        setError(r.messages || 'Cash out failed');
+        return;
+      }
       setReceipt(buildReceiptFromLive(r, {
         product: 'CASH_OUT',
         amount,

@@ -72,7 +72,7 @@ public class BranchOpsController {
             @AuthenticationPrincipal AccountPrincipal principal,
             @RequestBody Map<String, String> body
     ) {
-        return branchOpsService.cashInInquiry(principal, body.get("accountNo"));
+        return branchOpsService.cashInInquiry(principal, body.get("accountNo"), body.get("depositorNid"));
     }
 
     @PostMapping("/cash-in")

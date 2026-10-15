@@ -7,11 +7,24 @@ import { useAuth } from '../../auth/AuthContext';
 import { buildReceiptFromLive, type PaymentReceiptModel } from '../../lib/paymentReceipt';
 import type { DfsTxnResponse } from '../../lib/liveTransfers';
 
-type Inquiry = { accountNo?: string; name?: string; dob?: string };
+type Inquiry = {
+  accountNo?: string;
+  name?: string;
+  dob?: string;
+  nid?: string;
+  nidNo?: string;
+  cnic?: string;
+  depositorNid?: string;
+};
+
+function nidFrom(data: Inquiry, fallback: string): string {
+  return (data.nid || data.nidNo || data.cnic || data.depositorNid || fallback || '').replace(/\D/g, '');
+}
 
 export function BranchCashInPage() {
   const { session } = useAuth();
   const [accountNo, setAccountNo] = useState('');
+  const [depositorNid, setDepositorNid] = useState('');
   const [amount, setAmount] = useState('');
   const [narration, setNarration] = useState('Cash in');
   const [inquiry, setInquiry] = useState<Inquiry | null>(null);
@@ -38,13 +51,15 @@ export function BranchCashInPage() {
       const r = await api<DfsTxnResponse>('/api/branch/cash-in/inquiry', {
         method: 'POST',
         token: session.token,
-        body: JSON.stringify({ accountNo }),
+        body: JSON.stringify({ accountNo, depositorNid }),
       });
       const data = (r.data && typeof r.data === 'object' ? r.data : {}) as Inquiry;
       if (r.responsecode && r.responsecode !== '000' && r.responsecode !== '00') {
         setError(r.messages || 'Inquiry failed');
         return;
       }
+      const nid = nidFrom(data, depositorNid);
+      if (nid) setDepositorNid(nid);
       setInquiry({
         accountNo: data.accountNo || accountNo,
         name: data.name,
@@ -71,9 +86,13 @@ export function BranchCashInPage() {
           narration,
           depositorName: inquiry.name || '',
           depositorDob: inquiry.dob || '',
-          depositorNid: '',
+          depositorNid,
         }),
       });
+      if (r.responsecode && r.responsecode !== '000' && r.responsecode !== '00') {
+        setError(r.messages || 'Cash in failed');
+        return;
+      }
       setReceipt(buildReceiptFromLive(r, {
         product: 'CASH_IN',
         amount,
@@ -98,6 +117,17 @@ export function BranchCashInPage() {
           <div className="form-row">
             <label>Customer account / mobile</label>
             <input value={accountNo} onChange={(e) => setAccountNo(e.target.value)} required />
+          </div>
+          <div className="form-row">
+            <label>Depositor CNIC</label>
+            <input
+              value={depositorNid}
+              onChange={(e) => setDepositorNid(e.target.value)}
+              inputMode="numeric"
+              required
+              minLength={13}
+              placeholder="13 digits"
+            />
           </div>
           <button className="btn btn-primary desk-btn-block" type="submit" disabled={loading}>
             {loading ? 'Working…' : 'Inquiry'}
