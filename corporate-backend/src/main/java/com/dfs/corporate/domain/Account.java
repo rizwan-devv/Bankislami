@@ -40,6 +40,19 @@ public class Account {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    /** Branch cash-in / cash-out agent wallet. Not used by merchant logins. */
+    @Column(name = "dfs_mobile", length = 20)
+    private String dfsMobile;
+
+    @Column(name = "dfs_cnic", length = 20)
+    private String dfsCnic;
+
+    @Column(name = "dfs_mpin", length = 16)
+    private String dfsMpin;
+
+    @Column(name = "dfs_imei", length = 64)
+    private String dfsImei;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getPublicId() { return publicId; }
@@ -59,4 +72,12 @@ public class Account {
     public Instant getLastLoginAt() { return lastLoginAt; }
     public void setLastLoginAt(Instant lastLoginAt) { this.lastLoginAt = lastLoginAt; }
     public Instant getCreatedAt() { return createdAt; }
+    public String getDfsMobile() { return dfsMobile; }
+    public void setDfsMobile(String dfsMobile) { this.dfsMobile = dfsMobile; }
+    public String getDfsCnic() { return dfsCnic; }
+    public void setDfsCnic(String dfsCnic) { this.dfsCnic = dfsCnic; }
+    public String getDfsMpin() { return dfsMpin; }
+    public void setDfsMpin(String dfsMpin) { this.dfsMpin = dfsMpin; }
+    public String getDfsImei() { return dfsImei; }
+    public void setDfsImei(String dfsImei) { this.dfsImei = dfsImei; }
 }

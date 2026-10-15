@@ -36,6 +36,10 @@ import { UploadBillsPage } from './pages/UploadBillsPage';
 import { BranchHomePage } from './pages/branch/BranchHomePage';
 import { BranchXpinPage } from './pages/branch/BranchXpinPage';
 import { BranchPayBillPage } from './pages/branch/BranchPayBillPage';
+import { BranchCashInPage } from './pages/branch/BranchCashInPage';
+import { BranchCashOutPage } from './pages/branch/BranchCashOutPage';
+import { BranchIbftPage } from './pages/branch/BranchIbftPage';
+import { BranchLiveBillPage } from './pages/branch/BranchLiveBillPage';
 import { AcknowledgePage } from './pages/AcknowledgePage';
 import { ThemeProvider } from './theme/ThemeContext';
 
@@ -84,6 +88,10 @@ export default function App() {
               <Route path="/branch" element={<BranchHomePage />} />
               <Route path="/branch/xpin" element={<BranchXpinPage />} />
               <Route path="/branch/pay-bill" element={<BranchPayBillPage />} />
+              <Route path="/branch/cash-in" element={<BranchCashInPage />} />
+              <Route path="/branch/cash-out" element={<BranchCashOutPage />} />
+              <Route path="/branch/ibft" element={<BranchIbftPage />} />
+              <Route path="/branch/live-bill" element={<BranchLiveBillPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>

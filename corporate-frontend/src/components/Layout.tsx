@@ -131,13 +131,29 @@ export function Layout() {
                     <span className="portal-link-icon">▣</span>
                     Desk
                   </NavLink>
+                  <NavLink to="/branch/cash-in" className="portal-link">
+                    <span className="portal-link-icon">↓</span>
+                    Cash In
+                  </NavLink>
+                  <NavLink to="/branch/cash-out" className="portal-link">
+                    <span className="portal-link-icon">↑</span>
+                    Cash Out
+                  </NavLink>
+                  <NavLink to="/branch/ibft" className="portal-link">
+                    <span className="portal-link-icon">⇄</span>
+                    IBFT
+                  </NavLink>
+                  <NavLink to="/branch/live-bill" className="portal-link">
+                    <span className="portal-link-icon">▤</span>
+                    Bill pay
+                  </NavLink>
                   <NavLink to="/branch/xpin" className="portal-link">
                     <span className="portal-link-icon">◇</span>
                     Enter XPin
                   </NavLink>
                   <NavLink to="/branch/pay-bill" className="portal-link">
-                    <span className="portal-link-icon">⇄</span>
-                    Pay Bill
+                    <span className="portal-link-icon">☰</span>
+                    Uploaded bills
                   </NavLink>
                 </>
               )}

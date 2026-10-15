@@ -27,6 +27,10 @@ function productLabel(p: string): string {
     case 'IBFT': return 'Interbank Transfer';
     case 'UBP': return 'Utility Bill Payment';
     case 'RAAST': return 'Raast Payment';
+    case 'CASH_IN': return 'Cash In';
+    case 'CASH_OUT': return 'Cash Out';
+    case 'XPIN': return 'XPin verification';
+    case 'BILL': return 'Branch bill';
     default: return p || 'Payment';
   }
 }

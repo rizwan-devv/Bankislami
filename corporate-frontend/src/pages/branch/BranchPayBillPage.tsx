@@ -1,8 +1,10 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
+import { PaymentReceipt } from '../../components/PaymentReceipt';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
+import type { PaymentReceiptModel } from '../../lib/paymentReceipt';
 
 type Company = { publicId: string; name: string; ntn?: string | null; email: string; billCount: number };
 type Bill = {
@@ -24,6 +26,7 @@ export function BranchPayBillPage() {
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [loading, setLoading] = useState(false);
+  const [receipt, setReceipt] = useState<PaymentReceiptModel | null>(null);
 
   const loadCompanies = useCallback(async () => {
     if (!session?.token) return;
@@ -66,7 +69,15 @@ export function BranchPayBillPage() {
     setOk('');
     setLoading(true);
     try {
-      const res = await api<{ message: string }>('/api/branch/pay-bill', {
+      const res = await api<{
+        message: string;
+        action: string;
+        companyName?: string;
+        consumerNo?: string;
+        consumerName?: string;
+        amount?: number | null;
+        publicId: string;
+      }>('/api/branch/pay-bill', {
         method: 'POST',
         token: session.token,
         body: JSON.stringify({
@@ -76,6 +87,27 @@ export function BranchPayBillPage() {
         }),
       });
       setOk(res.message);
+      setReceipt({
+        product: 'BILL',
+        productLabel: 'Branch bill',
+        success: true,
+        statusLabel: res.action,
+        amountDisplay: res.amount != null
+          ? Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+          : '—',
+        currency: 'PKR',
+        paidAt: new Date().toISOString(),
+        portalTxnRef: res.publicId,
+        counterpartyTitle: res.consumerName || res.consumerNo,
+        counterpartySubtitle: res.companyName,
+        rows: [
+          { label: 'Company', value: res.companyName || '—' },
+          { label: 'Consumer', value: res.consumerNo || '—' },
+          { label: 'Action', value: res.action },
+        ],
+        networkRows: res.publicId ? [{ label: 'Reference', value: res.publicId }] : [],
+        message: res.message,
+      });
       if (action === 'FINISH') {
         setCompanyId('');
         setConsumerNo('');
@@ -205,6 +237,7 @@ export function BranchPayBillPage() {
           )}
         </div>
       </div>
+      {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }

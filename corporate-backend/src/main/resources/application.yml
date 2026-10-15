@@ -101,6 +101,14 @@ dfs:
     # App service (customer MPIN verify). Include /app context path.
     app-base-url: ${DFS_APP_API_BASE_URL:http://46.225.160.93:18002/app}
     channel: ${DFS_PORTAL_API_CHANNEL:COP}
+  # Agent cash-in / cash-out (Bearer when set, plus X-Portal-Key).
+  cash:
+    agent-base-url: ${DFS_CASH_AGENT_BASE_URL:http://46.225.160.93:18001}
+    txn-base-url: ${DFS_CASH_TXN_BASE_URL:http://46.225.160.93:18009}
+    third-party-base-url: ${DFS_CASH_THIRD_PARTY_BASE_URL:http://46.225.160.93:18008}
+    bearer: ${DFS_CASH_BEARER:}
+    imei: ${DFS_CASH_IMEI:BRANCH-DESK}
+    trans-purpose-id: ${DFS_CASH_PURPOSE_ID:1}
   # CMS card system (server-to-server). See docs/DFS-Corporate-CMS-API.postman_collection.json
   cms-api:
     enabled: ${DFS_CMS_API_ENABLED:false}

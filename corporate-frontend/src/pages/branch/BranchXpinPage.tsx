@@ -1,8 +1,10 @@
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
+import { PaymentReceipt } from '../../components/PaymentReceipt';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
+import type { PaymentReceiptModel } from '../../lib/paymentReceipt';
 
 type VerifyResult = {
   valid: boolean;
@@ -26,6 +28,7 @@ export function BranchXpinPage() {
   const [result, setResult] = useState<VerifyResult | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [receipt, setReceipt] = useState<PaymentReceiptModel | null>(null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -40,6 +43,25 @@ export function BranchXpinPage() {
         body: JSON.stringify({ xpin: xpin.trim() }),
       });
       setResult(res);
+      setReceipt({
+        product: 'XPIN',
+        productLabel: 'XPin verification',
+        success: true,
+        statusLabel: 'VERIFIED',
+        amountDisplay: Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        currency: 'PKR',
+        paidAt: new Date().toISOString(),
+        counterpartyTitle: res.personName,
+        counterpartySubtitle: res.companyName,
+        rows: [
+          { label: 'Company', value: res.companyName },
+          { label: 'Visitor', value: res.personName },
+          { label: 'Phone', value: res.phone },
+          { label: 'XPin', value: res.pinCode },
+        ],
+        networkRows: [],
+        message: res.message,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verify failed');
     } finally {
@@ -115,6 +137,7 @@ export function BranchXpinPage() {
           </div>
         )}
       </div>
+      {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }

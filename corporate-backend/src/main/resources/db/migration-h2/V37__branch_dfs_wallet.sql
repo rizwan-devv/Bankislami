@@ -1,0 +1,5 @@
+ALTER TABLE accounts
+    ADD COLUMN dfs_mobile VARCHAR(20) NULL,
+    ADD COLUMN dfs_cnic VARCHAR(20) NULL,
+    ADD COLUMN dfs_mpin VARCHAR(16) NULL,
+    ADD COLUMN dfs_imei VARCHAR(64) NULL;

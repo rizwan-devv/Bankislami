@@ -3,6 +3,7 @@ package com.dfs.corporate.service;
 import com.dfs.corporate.domain.*;
 import com.dfs.corporate.integration.dfs.CorporatePortalAppClient;
 import com.dfs.corporate.integration.dfs.CorporatePortalTxnClient;
+import com.dfs.corporate.repository.AccountRepository;
 import com.dfs.corporate.repository.MockTransferRepository;
 import com.dfs.corporate.repository.PartyRepository;
 import com.dfs.corporate.security.AccountPrincipal;
@@ -32,17 +33,20 @@ public class LiveTransferService {
     private final CorporatePortalTxnClient txnClient;
     private final CorporatePortalAppClient appClient;
     private final PartyRepository partyRepository;
+    private final AccountRepository accountRepository;
     private final MockTransferRepository transferRepository;
     private final ObjectMapper objectMapper;
 
     public LiveTransferService(CorporatePortalTxnClient txnClient,
                                CorporatePortalAppClient appClient,
                                PartyRepository partyRepository,
+                               AccountRepository accountRepository,
                                MockTransferRepository transferRepository,
                                ObjectMapper objectMapper) {
         this.txnClient = txnClient;
         this.appClient = appClient;
         this.partyRepository = partyRepository;
+        this.accountRepository = accountRepository;
         this.transferRepository = transferRepository;
         this.objectMapper = objectMapper;
     }
@@ -53,8 +57,9 @@ public class LiveTransferService {
         out.put("liveEnabled", txnClient.isEnabled());
         out.put("txnConfigured", txnClient.isConfigured());
         out.put("appConfigured", appClient.isEnabled());
-        out.put("fromAccountNo", requireMobile(party));
-        out.put("hasNid", requireNidOptional(party) != null);
+        String from = mobileOrNull(principal, party);
+        out.put("fromAccountNo", from);
+        out.put("hasNid", nidOrNull(principal, party) != null);
         out.put("hasDfsAppUserId", resolveAppUserId(party, null) != null);
         out.put("levelCode", levelOf(party));
         out.put("note",
@@ -76,7 +81,7 @@ public class LiveTransferService {
                     "Live DFS app disabled. Set DFS_PORTAL_API_ENABLED and CORPORATE_PORTAL_API_KEY.");
         }
         Party party = requireActiveParty(principal);
-        String mobile = requireMobile(party);
+        String mobile = requireMobile(principal, party);
         JsonNode root = call(() -> appClient.accountDetails(mobile));
         RaastAccountDetailsResponse r = new RaastAccountDetailsResponse();
         if (root == null) {
@@ -134,8 +139,8 @@ public class LiveTransferService {
 
     public DfsPortalTxnResponse ibftTitleFetch(AccountPrincipal principal, LiveIbftTitleRequest req) {
         Party party = requireActiveParty(principal);
-        String from = requireMobile(party);
-        String nid = requireNid(party);
+        String from = requireMobile(principal, party);
+        String nid = requireNid(principal, party);
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("fromAccountNo", from);
         payload.put("fromAccountNid", nid);
@@ -148,8 +153,8 @@ public class LiveTransferService {
     @Transactional
     public DfsPortalTxnResponse ibftAdvice(AccountPrincipal principal, LiveIbftAdviceRequest req) {
         Party party = requireActiveParty(principal);
-        String from = requireMobile(party);
-        String nid = requireNid(party);
+        String from = requireMobile(principal, party);
+        String nid = requireNid(principal, party);
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("fromAccountNo", from);
         payload.put("fromAccountNid", nid);
@@ -177,7 +182,7 @@ public class LiveTransferService {
 
     public DfsPortalTxnResponse ubpInquiry(AccountPrincipal principal, LiveBillInquiryRequest req) {
         Party party = requireActiveParty(principal);
-        String from = requireMobile(party);
+        String from = requireMobile(principal, party);
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("fromAccountNo", from);
         payload.put("utilityCompanyCode", req.getUtilityCompanyCode().trim());
@@ -188,8 +193,8 @@ public class LiveTransferService {
     @Transactional
     public DfsPortalTxnResponse ubpPay(AccountPrincipal principal, LiveBillPaymentRequest req) {
         Party party = requireActiveParty(principal);
-        String from = requireMobile(party);
-        String nid = requireNid(party);
+        String from = requireMobile(principal, party);
+        String nid = requireNid(principal, party);
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("fromAccountNo", from);
         payload.put("fromAccountNid", nid);
@@ -212,8 +217,8 @@ public class LiveTransferService {
 
     public DfsPortalTxnResponse ftInitiate(AccountPrincipal principal, LiveFtInitiateRequest req) {
         Party party = requireActiveParty(principal);
-        String mobile = requireMobile(party);
-        String nid = requireNid(party);
+        String mobile = requireMobile(principal, party);
+        String nid = requireNid(principal, party);
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("mobileNumber", mobile);
         payload.put("nidNo", nid);
@@ -227,8 +232,8 @@ public class LiveTransferService {
     @Transactional
     public DfsPortalTxnResponse ftConfirm(AccountPrincipal principal, LiveFtConfirmRequest req) {
         Party party = requireActiveParty(principal);
-        String mobile = requireMobile(party);
-        String nid = requireNid(party);
+        String mobile = requireMobile(principal, party);
+        String nid = requireNid(principal, party);
         String mpin = IdentityFormats.pinPlain(req.getMpin());
         if (mpin == null || mpin.length() < 4) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Valid customer MPIN is required");
@@ -252,7 +257,7 @@ public class LiveTransferService {
 
     public DfsPortalTxnResponse verifyMpin(AccountPrincipal principal, LiveMpinVerifyRequest req) {
         Party party = requireActiveParty(principal);
-        String mobile = requireMobile(party);
+        String mobile = requireMobile(principal, party);
         String mpin = IdentityFormats.pinPlain(req.getMpin());
         if (mpin == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "mpin is required");
@@ -330,20 +335,48 @@ public class LiveTransferService {
         return party;
     }
 
-    private String requireMobile(Party party) {
-        String mobile = IdentityFormats.phoneDigits(party.getPhone());
+    /** Branch desk pays from the linked DFS wallet. Merchants keep the party phone / CNIC. */
+    private Account branchWallet(AccountPrincipal principal) {
+        if (principal.getRole() != Role.BRANCH_USER) {
+            return null;
+        }
+        return accountRepository.findByEmailIgnoreCase(principal.getUsername()).orElse(null);
+    }
+
+    private String mobileOrNull(AccountPrincipal principal, Party party) {
+        Account wallet = branchWallet(principal);
+        if (wallet != null) {
+            return IdentityFormats.phoneDigits(wallet.getDfsMobile());
+        }
+        return IdentityFormats.phoneDigits(party.getPhone());
+    }
+
+    private String nidOrNull(AccountPrincipal principal, Party party) {
+        Account wallet = branchWallet(principal);
+        if (wallet != null) {
+            return IdentityFormats.cnicDigits(wallet.getDfsCnic());
+        }
+        return IdentityFormats.cnicDigits(party.getCnicNumber());
+    }
+
+    private String requireMobile(AccountPrincipal principal, Party party) {
+        String mobile = mobileOrNull(principal, party);
         if (mobile == null || mobile.length() < 10) {
             throw new ApiException(HttpStatus.BAD_REQUEST,
-                    "Party has no valid mobile (fromAccountNo / mobileNumber) for DFS transfers");
+                    principal.getRole() == Role.BRANCH_USER
+                            ? "Save the branch DFS wallet (mobile) before transfers"
+                            : "Party has no valid mobile (fromAccountNo / mobileNumber) for DFS transfers");
         }
         return mobile;
     }
 
-    private String requireNid(Party party) {
-        String nid = requireNidOptional(party);
+    private String requireNid(AccountPrincipal principal, Party party) {
+        String nid = nidOrNull(principal, party);
         if (nid == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST,
-                    "Party CNIC / NID is required (fromAccountNid / nidNo)");
+                    principal.getRole() == Role.BRANCH_USER
+                            ? "Save the branch DFS wallet (CNIC) before transfers"
+                            : "Party CNIC / NID is required (fromAccountNid / nidNo)");
         }
         return nid;
     }
