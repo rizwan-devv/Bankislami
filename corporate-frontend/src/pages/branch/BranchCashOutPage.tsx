@@ -86,12 +86,16 @@ export function BranchCashOutPage() {
       <PageHeader title="Cash Out" subtitle="Customer wallet → branch. OTP required before success." />
       {error && <div className="alert alert-error">{error}</div>}
       {ok && <div className="alert alert-success">{ok}</div>}
-      <form className="desk-card desk-card-accent" onSubmit={sendOtp}>
+      <form className="desk-card desk-card-accent desk-flow" onSubmit={sendOtp}>
+        <p className="desk-kicker">Step 1</p>
+        <h3 className="desk-card-title">Customer</h3>
         <div className="form-row">
           <label>Customer mobile</label>
           <input value={accountNo} onChange={(e) => setAccountNo(e.target.value)} required />
         </div>
-        <button className="btn btn-ghost" type="submit" disabled={loading}>Send OTP</button>
+        <button className="btn btn-ghost desk-btn-block" type="submit" disabled={loading}>Send OTP</button>
+        <p className="desk-kicker" style={{ marginTop: '1.25rem' }}>Step 2</p>
+        <h3 className="desk-card-title">Confirm</h3>
         <div className="form-row">
           <label>OTP</label>
           <input value={otpPin} onChange={(e) => setOtpPin(e.target.value)} inputMode="numeric" />
@@ -104,7 +108,7 @@ export function BranchCashOutPage() {
           <label>Narration</label>
           <input value={narration} onChange={(e) => setNarration(e.target.value)} />
         </div>
-        <button className="btn btn-primary" type="button" disabled={loading || !otpId || !otpPin} onClick={() => void execute()}>
+        <button className="btn btn-primary desk-btn-block" type="button" disabled={loading || !otpId || !otpPin} onClick={() => void execute()}>
           Cash out
         </button>
         <Link className="desk-back-link" to="/branch">← Branch home</Link>

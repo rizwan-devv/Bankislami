@@ -139,6 +139,10 @@ export function Layout() {
                     <span className="portal-link-icon">↑</span>
                     Cash Out
                   </NavLink>
+                  <NavLink to="/branch/ft" className="portal-link">
+                    <span className="portal-link-icon">→</span>
+                    Fund transfer
+                  </NavLink>
                   <NavLink to="/branch/ibft" className="portal-link">
                     <span className="portal-link-icon">⇄</span>
                     IBFT

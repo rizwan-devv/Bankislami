@@ -100,7 +100,7 @@ export function BranchIbftPage() {
     <div className="page desk-page">
       <PageHeader title="Single IBFT" subtitle="Portal live IBFT — title fetch, then advice." />
       {error && <div className="alert alert-error">{error}</div>}
-      <form className="desk-card desk-card-accent" onSubmit={fetchTitle}>
+      <form className="desk-card desk-card-accent desk-flow" onSubmit={fetchTitle}>
         <div className="form-row">
           <label>Bank</label>
           <select value={bankImd} onChange={(e) => setBankImd(e.target.value)} required>
@@ -122,11 +122,13 @@ export function BranchIbftPage() {
           <label>Purpose</label>
           <input value={purpose} onChange={(e) => setPurpose(e.target.value)} required />
         </div>
-        <button className="btn btn-ghost" type="submit" disabled={loading}>Title fetch</button>
-        {title && <p className="muted">Title: <strong>{title}</strong></p>}
-        <button className="btn btn-primary" type="button" disabled={loading || !title} onClick={() => void pay()}>
-          Send IBFT
-        </button>
+        <div className="desk-actions">
+          <button className="btn btn-ghost" type="submit" disabled={loading}>Title fetch</button>
+          {title && <p className="muted">Title: <strong>{title}</strong></p>}
+          <button className="btn btn-primary" type="button" disabled={loading || !title} onClick={() => void pay()}>
+            Send IBFT
+          </button>
+        </div>
         <Link className="desk-back-link" to="/branch">← Branch home</Link>
       </form>
       {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}

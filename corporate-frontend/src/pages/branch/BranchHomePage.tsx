@@ -68,7 +68,7 @@ export function BranchHomePage() {
         <div className="form-row"><label>CNIC</label><input value={cnic} onChange={(e) => setCnic(e.target.value)} required /></div>
         <div className="form-row"><label>MPIN</label><input type="password" value={mpin} onChange={(e) => setMpin(e.target.value)} required placeholder="Stored for cash-in" /></div>
         <div className="form-row"><label>IMEI</label><input value={imei} onChange={(e) => setImei(e.target.value)} placeholder="Optional" /></div>
-        <button className="btn btn-primary" type="submit">Save wallet</button>
+        <button className="btn btn-primary desk-btn-block" type="submit">Save wallet</button>
       </form>
 
       <div className="desk-hero">
@@ -95,6 +95,14 @@ export function BranchHomePage() {
           <span className="desk-tile-body">
             <strong>Cash Out</strong>
             <span className="muted">Customer to branch · OTP then success</span>
+          </span>
+          <span className="desk-tile-arrow" aria-hidden>→</span>
+        </Link>
+        <Link className="desk-tile" to="/branch/ft">
+          <span className="desk-tile-icon" aria-hidden>→</span>
+          <span className="desk-tile-body">
+            <strong>Fund transfer</strong>
+            <span className="muted">Wallet to wallet · payer MPIN</span>
           </span>
           <span className="desk-tile-arrow" aria-hidden>→</span>
         </Link>

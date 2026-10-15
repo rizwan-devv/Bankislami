@@ -149,7 +149,7 @@ export function BranchCashInPage() {
               <label>Narration</label>
               <input value={narration} onChange={(e) => setNarration(e.target.value)} />
             </div>
-            <button className="btn btn-primary" type="button" disabled={loading || !amount} onClick={() => void execute()}>
+            <button className="btn btn-primary desk-btn-block" type="button" disabled={loading || !amount} onClick={() => void execute()}>
               Cash in
             </button>
           </div>

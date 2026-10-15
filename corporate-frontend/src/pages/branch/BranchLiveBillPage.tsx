@@ -95,7 +95,7 @@ export function BranchLiveBillPage() {
     <div className="page desk-page">
       <PageHeader title="Single bill payment" subtitle="Portal live bill inquiry, then pay." />
       {error && <div className="alert alert-error">{error}</div>}
-      <form className="desk-card desk-card-accent" onSubmit={inquire}>
+      <form className="desk-card desk-card-accent desk-flow" onSubmit={inquire}>
         <div className="form-row">
           <label>Biller</label>
           <select value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} required>
@@ -109,12 +109,12 @@ export function BranchLiveBillPage() {
           <label>Consumer number</label>
           <input value={consumerNo} onChange={(e) => setConsumerNo(e.target.value)} required />
         </div>
-        <button className="btn btn-ghost" type="submit" disabled={loading}>Inquiry</button>
+        <button className="btn btn-ghost desk-btn-block" type="submit" disabled={loading}>Inquiry</button>
         <div className="form-row">
           <label>Amount</label>
           <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" required />
         </div>
-        <button className="btn btn-primary" type="button" disabled={loading || !amount} onClick={() => void pay()}>
+        <button className="btn btn-primary desk-btn-block" type="button" disabled={loading || !amount} onClick={() => void pay()}>
           Pay bill
         </button>
         <Link className="desk-back-link" to="/branch">← Branch home</Link>

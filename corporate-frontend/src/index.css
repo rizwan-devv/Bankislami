@@ -5708,6 +5708,43 @@ html[data-theme="payfast"] body {
   max-width: 1100px;
 }
 
+.desk-page .btn-primary,
+.desk-page .btn-ghost {
+  width: 100%;
+  min-height: 2.85rem;
+  border-radius: 14px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.desk-page .btn-primary {
+  border: none;
+  color: #fff;
+  background: linear-gradient(135deg, #2dd4bf 0%, var(--accent) 46%, #047857 100%);
+  box-shadow: 0 10px 24px var(--accent-glow);
+}
+
+.desk-page .btn-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.desk-page .btn-primary:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.desk-page .btn-ghost {
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-card) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.desk-page .btn-ghost:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .desk-kicker {
   margin: 0 0 0.35rem;
   font-size: 0.7rem;
@@ -5719,13 +5756,13 @@ html[data-theme="payfast"] body {
 
 .desk-hero {
   margin: 0 0 1.25rem;
-  padding: 1.35rem 1.5rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
+  padding: 1.5rem 1.6rem;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, #2dd4bf 28%, var(--border));
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 55%),
-    var(--bg-card);
-  box-shadow: var(--shadow-sm);
+    radial-gradient(120% 140% at 100% 0%, rgba(45, 212, 191, 0.28), transparent 46%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, var(--bg-card)), var(--bg-card) 62%);
+  box-shadow: var(--shadow-md);
 }
 
 .desk-hero-title {
@@ -5752,10 +5789,11 @@ html[data-theme="payfast"] body {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 1.25rem 1.35rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  background: var(--bg-card);
+  padding: 1.2rem 1.25rem;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 8%, var(--bg-card)), var(--bg-card));
   color: inherit;
   text-decoration: none;
   box-shadow: var(--shadow-sm);
@@ -5763,22 +5801,29 @@ html[data-theme="payfast"] body {
 }
 
 .desk-tile:hover {
-  transform: translateY(-2px);
-  border-color: var(--border-strong);
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, #2dd4bf 50%, var(--accent));
   box-shadow: var(--shadow-glow);
 }
 
 .desk-tile-icon {
   flex: 0 0 auto;
-  width: 2.75rem;
-  height: 2.75rem;
+  width: 3rem;
+  height: 3rem;
   display: grid;
   place-items: center;
-  border-radius: 12px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-size: 1.25rem;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #5eead4, var(--accent) 55%, #065f46);
+  color: #fff;
+  font-size: 1.15rem;
+  box-shadow: 0 8px 16px var(--accent-glow);
 }
+
+.desk-tile:nth-child(2) .desk-tile-icon { background: linear-gradient(145deg, #67e8f9, #0891b2); }
+.desk-tile:nth-child(3) .desk-tile-icon { background: linear-gradient(145deg, #86efac, #15803d); }
+.desk-tile:nth-child(4) .desk-tile-icon { background: linear-gradient(145deg, #fde68a, #d97706); color: #1c1917; }
+.desk-tile:nth-child(5) .desk-tile-icon { background: linear-gradient(145deg, #c4b5fd, #6d28d9); }
+.desk-tile:nth-child(6) .desk-tile-icon { background: linear-gradient(145deg, #fda4af, #e11d48); }
 
 .desk-tile-body {
   display: flex;
@@ -5809,18 +5854,30 @@ html[data-theme="payfast"] body {
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.15fr);
 }
 
+.desk-flow {
+  max-width: 34rem;
+}
+
 .desk-card {
-  padding: 1.35rem 1.45rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-sm);
+  padding: 1.4rem 1.45rem 1.35rem;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 6%, var(--bg-card)), var(--bg-card));
+  box-shadow: var(--shadow-md);
 }
 
 .desk-card-accent {
   background:
-    linear-gradient(165deg, color-mix(in srgb, var(--accent) 10%, var(--bg-card)), var(--bg-card) 48%);
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+    radial-gradient(90% 80% at 0% 0%, rgba(45, 212, 191, 0.16), transparent 50%),
+    linear-gradient(165deg, color-mix(in srgb, var(--accent) 12%, var(--bg-card)), var(--bg-card) 58%);
+  border-color: color-mix(in srgb, #2dd4bf 32%, var(--border));
+}
+
+.desk-card .form-row input,
+.desk-card .form-row select {
+  border-radius: 12px;
+  min-height: 2.75rem;
 }
 
 .desk-card-title {
@@ -5921,9 +5978,9 @@ html[data-theme="payfast"] body {
 
 .desk-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  margin-top: 0.5rem;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
 }
 
 .desk-form-grid {

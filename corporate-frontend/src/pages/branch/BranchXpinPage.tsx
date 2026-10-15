@@ -128,7 +128,7 @@ export function BranchXpinPage() {
               <div><dt>Valid until</dt><dd>{new Date(result.validUntil).toLocaleString()}</dd></div>
             </dl>
             <button
-              className="btn btn-primary"
+              className="btn btn-primary desk-btn-block"
               type="button"
               onClick={() => { setResult(null); setXpin(''); }}
             >
