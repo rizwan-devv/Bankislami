@@ -275,7 +275,7 @@ public class BranchOpsService {
         return cashView(done, customer, null, "CASH_OUT", wallet.getDfsMobile());
     }
 
-    public List<Map<String, Object>> history(AccountPrincipal principal) {
+    public List<Map<String, Object>> history(AccountPrincipal principal, String type) {
         requireBranch(principal);
         if (principal.getPartyId() == null) {
             return List.of();
@@ -283,9 +283,11 @@ public class BranchOpsService {
         String branchMobile = accountRepository.findByEmailIgnoreCase(principal.getUsername())
                 .map(Account::getDfsMobile)
                 .orElse(null);
+        String want = type == null ? "" : type.trim().toUpperCase();
         return transferRepository.findByPartyIdOrderByCreatedAtDesc(principal.getPartyId()).stream()
-                .limit(100)
                 .map(row -> historyRow(row, branchMobile))
+                .filter(row -> want.isEmpty() || want.equals(row.get("type")))
+                .limit(want.isEmpty() ? 100 : 20)
                 .toList();
     }
 
@@ -309,6 +311,11 @@ public class BranchOpsService {
         out.put("statusLabel", statusLabel(row.getStatus()));
         out.put("reference", row.getMockTxnRef());
         out.put("detail", firstText(row.getBeneficiaryName(), row.getUbpCompany()));
+        out.put("beneficiaryName", blank(row.getBeneficiaryName()));
+        out.put("bankName", blank(row.getBankName()));
+        out.put("notes", blank(row.getNotes()));
+        out.put("ubpCompany", blank(row.getUbpCompany()));
+        out.put("consumerNumber", blank(row.getConsumerNumber()));
         return out;
     }
 

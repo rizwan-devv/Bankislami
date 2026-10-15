@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
 import { PaymentReceipt } from '../../components/PaymentReceipt';
+import { BranchRecent } from './BranchRecent';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 import { buildReceiptFromLive, type PaymentReceiptModel } from '../../lib/paymentReceipt';
@@ -95,7 +96,8 @@ export function BranchLiveBillPage() {
     <div className="page desk-page">
       <PageHeader title="Single bill payment" subtitle="Portal live bill inquiry, then pay." />
       {error && <div className="alert alert-error">{error}</div>}
-      <form className="desk-card desk-card-accent desk-flow" onSubmit={inquire}>
+      <div className="desk-split">
+      <form className="desk-card desk-card-accent" onSubmit={inquire}>
         <div className="form-row">
           <label>Biller</label>
           <select value={companyCode} onChange={(e) => setCompanyCode(e.target.value)} required>
@@ -119,6 +121,8 @@ export function BranchLiveBillPage() {
         </button>
         <Link className="desk-back-link" to="/branch">← Branch home</Link>
       </form>
+      <BranchRecent type="UBP" refreshKey={receipt?.portalTxnRef} />
+      </div>
       {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );

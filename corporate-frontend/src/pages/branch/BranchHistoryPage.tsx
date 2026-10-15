@@ -1,19 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
+import { PaymentReceipt } from '../../components/PaymentReceipt';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
+import {
+  buildReceiptFromBranchHistory,
+  type BranchHistoryRow,
+  type PaymentReceiptModel,
+} from '../../lib/paymentReceipt';
 
-type HistoryRow = {
-  at?: string;
-  typeLabel?: string;
-  fromAccount?: string;
-  toAccount?: string;
-  amount?: number | string | null;
-  statusLabel?: string;
-  reference?: string;
-  detail?: string;
-};
+type HistoryRow = BranchHistoryRow;
 
 function money(amount: HistoryRow['amount']): string {
   if (amount === null || amount === undefined || amount === '') return '—';
@@ -40,6 +37,7 @@ export function BranchHistoryPage() {
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [receipt, setReceipt] = useState<PaymentReceiptModel | null>(null);
 
   useEffect(() => {
     if (!session?.token || session.role !== 'BRANCH_USER') return;
@@ -82,7 +80,11 @@ export function BranchHistoryPage() {
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.reference || `${row.at}-${row.toAccount}`}>
+                  <tr
+                    key={row.reference || `${row.at}-${row.toAccount}`}
+                    className="desk-history-row"
+                    onClick={() => setReceipt(buildReceiptFromBranchHistory(row))}
+                  >
                     <td>{when(row.at)}</td>
                     <td>
                       {row.typeLabel || '—'}
@@ -101,6 +103,7 @@ export function BranchHistoryPage() {
         )}
         <Link className="desk-back-link" to="/branch">← Branch home</Link>
       </div>
+      {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
 }

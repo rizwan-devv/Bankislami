@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
 import { PaymentReceipt } from '../../components/PaymentReceipt';
+import { BranchRecent } from './BranchRecent';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 import { buildReceiptFromLive, type PaymentReceiptModel } from '../../lib/paymentReceipt';
@@ -60,7 +61,8 @@ export function BranchCashOutPage() {
     <div className="page desk-page">
       <PageHeader title="Cash Out" subtitle="Customer pays the saved branch wallet. Customer MPIN confirms. No OTP." />
       {error && <div className="alert alert-error">{error}</div>}
-      <form className="desk-card desk-card-accent desk-flow" onSubmit={execute}>
+      <div className="desk-split">
+      <form className="desk-card desk-card-accent" onSubmit={execute}>
         <p className="desk-kicker">Customer</p>
         <h3 className="desk-card-title">Take cash from this wallet</h3>
         <div className="form-row">
@@ -95,6 +97,8 @@ export function BranchCashOutPage() {
         </button>
         <Link className="desk-back-link" to="/branch">← Branch home</Link>
       </form>
+      <BranchRecent type="CASH_OUT" refreshKey={receipt?.portalTxnRef} />
+      </div>
       {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );

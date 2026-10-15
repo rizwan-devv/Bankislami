@@ -91,8 +91,11 @@ public class BranchOpsController {
     }
 
     @GetMapping("/history")
-    public List<Map<String, Object>> history(@AuthenticationPrincipal AccountPrincipal principal) {
-        return branchOpsService.history(principal);
+    public List<Map<String, Object>> history(
+            @AuthenticationPrincipal AccountPrincipal principal,
+            @RequestParam(required = false) String type
+    ) {
+        return branchOpsService.history(principal, type);
     }
 
     @PostMapping("/cash-out/otp")

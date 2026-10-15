@@ -6123,6 +6123,47 @@ html[data-theme="payfast"] body {
   overflow: auto;
 }
 
+.desk-history-row {
+  cursor: pointer;
+}
+
+.desk-recent {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.desk-recent-btn {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-card));
+  cursor: pointer;
+}
+
+.desk-recent-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.desk-recent-ok {
+  color: #047857;
+  font-weight: 650;
+}
+
+.desk-recent-ref {
+  font-size: 0.78rem;
+}
+
 @media (max-width: 860px) {
   .desk-tile-grid,
   .desk-split,

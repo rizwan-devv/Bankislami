@@ -173,6 +173,59 @@ export function buildReceiptFromLive(
   };
 }
 
+export type BranchHistoryRow = {
+  at?: string;
+  type?: string;
+  typeLabel?: string;
+  fromAccount?: string;
+  toAccount?: string;
+  amount?: number | string | null;
+  status?: string;
+  statusLabel?: string;
+  reference?: string;
+  detail?: string;
+  beneficiaryName?: string;
+  bankName?: string;
+  notes?: string;
+  ubpCompany?: string;
+  consumerNumber?: string;
+};
+
+export function buildReceiptFromBranchHistory(row: BranchHistoryRow): PaymentReceiptModel {
+  const product = (row.type || 'FT').toUpperCase();
+  const success = row.status === 'LIVE_SUCCESS' || row.status === 'MOCK_SUCCESS' || row.statusLabel === 'Success';
+  const name = row.beneficiaryName || row.detail;
+  const rows: { label: string; value: string }[] = [];
+  if (row.fromAccount) rows.push({ label: 'From', value: row.fromAccount });
+  if (product === 'UBP') {
+    const biller = row.ubpCompany || name;
+    if (biller) rows.push({ label: 'Biller', value: biller });
+    if (row.toAccount) rows.push({ label: 'Consumer', value: row.toAccount });
+  } else {
+    if (name) rows.push({ label: 'Beneficiary', value: name });
+    if (row.toAccount) rows.push({ label: product === 'IBFT' ? 'Account / IBAN' : 'To wallet', value: row.toAccount });
+    if (row.bankName) rows.push({ label: 'Bank', value: row.bankName });
+  }
+  if (row.notes) rows.push({ label: 'Notes', value: row.notes });
+  return {
+    product,
+    productLabel: productLabel(product),
+    success,
+    statusLabel: success ? 'SUCCESS' : 'FAILED',
+    amountDisplay: formatAmountPkr(row.amount),
+    currency: 'PKR',
+    paidAt: row.at || new Date().toISOString(),
+    payerAccountNo: row.fromAccount,
+    portalTxnRef: row.reference,
+    counterpartyTitle: name || row.ubpCompany,
+    counterpartySubtitle: row.toAccount,
+    rows,
+    networkRows: [],
+    message: row.notes,
+    responseCode: success ? '000' : undefined,
+  };
+}
+
 export function buildReceiptFromHistory(t: MockTransfer, live?: DfsTxnResponse | null): PaymentReceiptModel {
   const success = t.status === 'LIVE_SUCCESS' || t.status === 'SUCCESS' || t.status === 'COMPLETED';
   const base = live

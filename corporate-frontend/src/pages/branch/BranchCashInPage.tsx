@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
 import { PaymentReceipt } from '../../components/PaymentReceipt';
+import { BranchRecent } from './BranchRecent';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 import { buildReceiptFromLive, type PaymentReceiptModel } from '../../lib/paymentReceipt';
@@ -58,7 +59,8 @@ export function BranchCashInPage() {
     <div className="page desk-page">
       <PageHeader title="Cash In" subtitle="Saved branch wallet pays the customer. Wallet MPIN is used. No customer OTP." />
       {error && <div className="alert alert-error">{error}</div>}
-      <form className="desk-card desk-card-accent desk-flow" onSubmit={execute}>
+      <div className="desk-split">
+      <form className="desk-card desk-card-accent" onSubmit={execute}>
         <p className="desk-kicker">Customer</p>
         <h3 className="desk-card-title">Pay this customer</h3>
         <div className="form-row">
@@ -78,6 +80,8 @@ export function BranchCashInPage() {
         </button>
         <Link className="desk-back-link" to="/branch">← Branch home</Link>
       </form>
+      <BranchRecent type="CASH_IN" refreshKey={receipt?.portalTxnRef} />
+      </div>
       {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );

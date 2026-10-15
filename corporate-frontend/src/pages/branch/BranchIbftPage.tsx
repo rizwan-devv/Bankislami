@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
 import { PaymentReceipt } from '../../components/PaymentReceipt';
+import { BranchRecent } from './BranchRecent';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 import { buildReceiptFromLive, type PaymentReceiptModel } from '../../lib/paymentReceipt';
@@ -100,7 +101,8 @@ export function BranchIbftPage() {
     <div className="page desk-page">
       <PageHeader title="Single IBFT" subtitle="Portal live IBFT — title fetch, then advice." />
       {error && <div className="alert alert-error">{error}</div>}
-      <form className="desk-card desk-card-accent desk-flow" onSubmit={fetchTitle}>
+      <div className="desk-split">
+      <form className="desk-card desk-card-accent" onSubmit={fetchTitle}>
         <div className="form-row">
           <label>Bank</label>
           <select value={bankImd} onChange={(e) => setBankImd(e.target.value)} required>
@@ -131,6 +133,8 @@ export function BranchIbftPage() {
         </div>
         <Link className="desk-back-link" to="/branch">← Branch home</Link>
       </form>
+      <BranchRecent type="IBFT" refreshKey={receipt?.portalTxnRef} />
+      </div>
       {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );

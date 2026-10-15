@@ -2,6 +2,7 @@ import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
 import { PaymentReceipt } from '../../components/PaymentReceipt';
+import { BranchRecent } from './BranchRecent';
 import { api } from '../../lib/api';
 import { useAuth } from '../../auth/AuthContext';
 import { buildReceiptFromLive, type PaymentReceiptModel } from '../../lib/paymentReceipt';
@@ -101,7 +102,8 @@ export function BranchFtPage() {
       <PageHeader title="Fund transfer" subtitle="Branch wallet → another DFS wallet. Payer MPIN confirms." />
       {error && <div className="alert alert-error">{error}</div>}
       {ok && <div className="alert alert-success">{ok}</div>}
-      <form className="desk-card desk-card-accent desk-flow" onSubmit={initiate}>
+      <div className="desk-split">
+      <form className="desk-card desk-card-accent" onSubmit={initiate}>
         <p className="desk-kicker">Step 1</p>
         <h3 className="desk-card-title">Beneficiary</h3>
         <div className="form-row">
@@ -132,6 +134,8 @@ export function BranchFtPage() {
         )}
         <Link className="desk-back-link" to="/branch">← Branch home</Link>
       </form>
+      <BranchRecent type="FT" refreshKey={receipt?.portalTxnRef} />
+      </div>
       {receipt && <PaymentReceipt receipt={receipt} onClose={() => setReceipt(null)} />}
     </div>
   );
