@@ -1760,50 +1760,30 @@ export function AdminPage() {
           )}
 
           {canDecide && (
-            <footer className="ops-case-footer">
-              <div className="ops-drawer-footer-copy">
-                {selected.status === 'PENDING_APPROVAL' && (
-                  <div className="ops-checklist">
-                    <span className={(selected.partnerKycTotal || 0) === 0 || selected.partnerKycCompleted === selected.partnerKycTotal ? 'ok' : ''}>
-                      KYC {selected.partnerKycCompleted ?? 0}/{selected.partnerKycTotal ?? 0}
-                    </span>
-                    <span className={(selected.docsPending ?? 0) === 0 ? 'ok' : ''}>
-                      Docs pending {selected.docsPending ?? 0}
-                    </span>
-                    <span className={(selected.docsRejected ?? 0) === 0 ? 'ok' : ''}>
-                      Rejected {selected.docsRejected ?? 0}
-                    </span>
-                    <span className={selected.sanctionsStatus === 'CLEAR' ? 'ok' : selected.sanctionsStatus === 'HIT' ? 'bad' : ''}>
-                      Sanctions {selected.sanctionsStatus || '—'}
-                    </span>
-                    <span className={selected.customerAcknowledged ? 'ok' : ''}>
-                      {selected.customerAcknowledged
-                        ? 'Customer acknowledged'
-                        : selected.acknowledgmentSentAt
-                          ? 'Awaiting customer ack'
-                          : 'Ack not sent'}
-                    </span>
-                  </div>
-                )}
+            <>
+              <section className="ops-drawer-section">
+                <div className="ops-drawer-section-head">
+                  <h3>Decision</h3>
+                  <p className="muted">Scroll docs above — actions stay pinned at the bottom.</p>
+                </div>
                 {selected.status === 'PENDING_APPROVAL' && !selected.customerAcknowledged && (
-                  <p className="muted">
-                    Send an acknowledgment email to <strong>{selected.email}</strong>. Approve stays locked until
-                    the account holder confirms the secure link.
+                  <p className="muted" style={{ margin: '0 0 0.65rem' }}>
+                    Send acknowledgment to <strong>{selected.email}</strong>. Approve stays locked until they confirm.
                   </p>
                 )}
                 {selected.status === 'PENDING_APPROVAL' && selected.customerAcknowledged && selected.acknowledgedAt && (
-                  <p className="muted">
-                    Customer acknowledged {new Date(selected.acknowledgedAt).toLocaleString()}. You may approve when docs and sanctions are clear.
+                  <p className="muted" style={{ margin: '0 0 0.65rem' }}>
+                    Customer acknowledged {new Date(selected.acknowledgedAt).toLocaleString()}.
                   </p>
                 )}
                 {selected.status === 'SUBMITTED' && (
-                  <p className="muted">Waiting on partner app KYC — you can still reject the full application.</p>
+                  <p className="muted" style={{ margin: '0 0 0.65rem' }}>Waiting on partner app KYC — you can still reject.</p>
                 )}
                 {selected.status === 'INCOMPLETE' && (
-                  <p className="muted">Incomplete: applicant must re-upload rejected documents.</p>
+                  <p className="muted" style={{ margin: '0 0 0.65rem' }}>Incomplete: applicant must re-upload rejected documents.</p>
                 )}
                 {selected.status === 'PENDING_APPROVAL' && (
-                  <div className="form-row" style={{ marginTop: '0.5rem' }}>
+                  <div className="form-row">
                     <label>
                       Owner CNIC for DFS (if not from KYC)
                       <input
@@ -1824,45 +1804,70 @@ export function AdminPage() {
                   onChange={(e) => setRejectReason(e.target.value)}
                   placeholder="Full application reject reason (required to reject)"
                 />
-              </div>
-              <div className="ops-drawer-footer-actions">
-                <button className="btn btn-ghost" type="button" onClick={() => void rescreenSanctions(selected.id)}>
-                  Re-screen AML
-                </button>
-                <button className="btn btn-ghost" type="button" onClick={() => void clearSanctions(selected.id)} disabled={selected.sanctionsStatus === 'CLEAR'}>
-                  Clear sanctions
-                </button>
-                {selected.status === 'PENDING_APPROVAL' && !selected.customerAcknowledged && (
-                  <button
-                    className="btn btn-ghost"
-                    type="button"
-                    onClick={() => void sendAcknowledgment(selected.id)}
-                  >
-                    {selected.acknowledgmentSentAt ? 'Resend acknowledgment' : 'Send acknowledgment'}
-                  </button>
-                )}
+              </section>
+              <footer className="ops-case-footer" style={{ padding: '0.55rem 0.85rem', alignItems: 'center', gap: '0.65rem' }}>
                 {selected.status === 'PENDING_APPROVAL' && (
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    disabled={!selected.docsReadyForApprove || !selected.customerAcknowledged}
-                    title={
-                      !selected.customerAcknowledged
-                        ? 'Customer must acknowledge the emailed link before approve'
-                        : !selected.docsReadyForApprove
-                          ? 'Documents must be reviewed first'
-                          : undefined
-                    }
-                    onClick={() => void approve(selected.id)}
-                  >
-                    Approve entity
-                  </button>
+                  <div className="ops-checklist">
+                    <span className={(selected.partnerKycTotal || 0) === 0 || selected.partnerKycCompleted === selected.partnerKycTotal ? 'ok' : ''}>
+                      KYC {selected.partnerKycCompleted ?? 0}/{selected.partnerKycTotal ?? 0}
+                    </span>
+                    <span className={(selected.docsPending ?? 0) === 0 ? 'ok' : ''}>
+                      Docs {selected.docsPending ?? 0}
+                    </span>
+                    <span className={(selected.docsRejected ?? 0) === 0 ? 'ok' : ''}>
+                      Rej {selected.docsRejected ?? 0}
+                    </span>
+                    <span className={selected.sanctionsStatus === 'CLEAR' ? 'ok' : selected.sanctionsStatus === 'HIT' ? 'bad' : ''}>
+                      {selected.sanctionsStatus || '—'}
+                    </span>
+                    <span className={selected.customerAcknowledged ? 'ok' : ''}>
+                      {selected.customerAcknowledged
+                        ? 'Ack OK'
+                        : selected.acknowledgmentSentAt
+                          ? 'Ack pending'
+                          : 'Ack not sent'}
+                    </span>
+                  </div>
                 )}
-                <button className="btn btn-danger" type="button" onClick={() => void reject(selected.id)}>
-                  Reject application
-                </button>
-              </div>
-            </footer>
+                <div className="ops-drawer-footer-actions">
+                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => void rescreenSanctions(selected.id)}>
+                    Re-screen
+                  </button>
+                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => void clearSanctions(selected.id)} disabled={selected.sanctionsStatus === 'CLEAR'}>
+                    Clear sanctions
+                  </button>
+                  {selected.status === 'PENDING_APPROVAL' && !selected.customerAcknowledged && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      type="button"
+                      onClick={() => void sendAcknowledgment(selected.id)}
+                    >
+                      {selected.acknowledgmentSentAt ? 'Resend ack' : 'Send ack'}
+                    </button>
+                  )}
+                  {selected.status === 'PENDING_APPROVAL' && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      type="button"
+                      disabled={!selected.docsReadyForApprove || !selected.customerAcknowledged}
+                      title={
+                        !selected.customerAcknowledged
+                          ? 'Customer must acknowledge the emailed link before approve'
+                          : !selected.docsReadyForApprove
+                            ? 'Documents must be reviewed first'
+                            : undefined
+                      }
+                      onClick={() => void approve(selected.id)}
+                    >
+                      Approve
+                    </button>
+                  )}
+                  <button className="btn btn-danger btn-sm" type="button" onClick={() => void reject(selected.id)}>
+                    Reject
+                  </button>
+                </div>
+              </footer>
+            </>
           )}
         </div>
       )}
