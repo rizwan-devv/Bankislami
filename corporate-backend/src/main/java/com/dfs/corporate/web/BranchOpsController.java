@@ -108,7 +108,7 @@ public class BranchOpsController {
                 body.get("accountNo"),
                 body.get("amount"),
                 body.get("narration"),
-                body.get("otpId"),
-                body.get("otpPin"));
+                body.get("cnic"),
+                body.get("mpin"));
     }
 }

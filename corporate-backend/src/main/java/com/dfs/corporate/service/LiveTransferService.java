@@ -215,6 +215,69 @@ public class LiveTransferService {
         return resp;
     }
 
+    /**
+     * Customer pays the saved branch wallet. The customer mobile, CNIC, and MPIN are the payer.
+     * The branch wallet is only the beneficiary.
+     */
+    @Transactional
+    public DfsPortalTxnResponse cashOutToBranch(AccountPrincipal principal, String customerMobile, String customerNid,
+                                                String customerMpin, String amount, String narration) {
+        Party party = requireActiveParty(principal);
+        Account wallet = branchWallet(principal);
+        String branchMobile = wallet == null ? null : IdentityFormats.phoneDigits(wallet.getDfsMobile());
+        if (branchMobile == null || branchMobile.length() < 10) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Save the branch DFS wallet (mobile) before transfers");
+        }
+        String payerMobile = IdentityFormats.phoneDigits(customerMobile);
+        String payerNid = IdentityFormats.cnicDigits(customerNid);
+        String mpin = IdentityFormats.pinPlain(customerMpin);
+        if (payerMobile == null || payerMobile.length() < 10) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Customer mobile is required");
+        }
+        if (payerNid == null || payerNid.length() != 13) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Customer CNIC must be 13 digits");
+        }
+        if (mpin == null || mpin.length() < 4) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Customer MPIN is required");
+        }
+        String amt = normalizeAmount(amount);
+        String note = narration == null || narration.isBlank() ? "Cash out" : narration.trim();
+
+        ObjectNode init = objectMapper.createObjectNode();
+        init.put("mobileNumber", payerMobile);
+        init.put("nidNo", payerNid);
+        init.put("accountNo", branchMobile);
+        init.put("amount", amt);
+        init.put("accountType", "W");
+        DfsPortalTxnResponse started = wrap("CASH_OUT", payerMobile, call(() -> txnClient.initiateLocalFt(init)));
+        if (!"000".equals(started.getResponsecode())) {
+            return started;
+        }
+
+        ObjectNode conf = objectMapper.createObjectNode();
+        conf.put("mobileNumber", payerMobile);
+        conf.put("nidNo", payerNid);
+        conf.put("accountNo", branchMobile);
+        conf.put("accountType", "W");
+        conf.put("amount", amt);
+        conf.put("mpin", mpin);
+        conf.put("transPurposeId", "1");
+        conf.put("narration", note);
+        DfsPortalTxnResponse done = wrap("CASH_OUT", payerMobile, call(() -> txnClient.fundsTransferLocal(conf)));
+        String title = titleOf(started);
+        persist(party, principal, MockTransferProduct.FT, amt, branchMobile, null, title, note, done);
+        done.setProduct("CASH_OUT");
+        ObjectNode data = done.getData() != null && done.getData().isObject()
+                ? (ObjectNode) done.getData()
+                : objectMapper.createObjectNode();
+        data.put("accountNo", branchMobile);
+        if (title != null) {
+            data.put("beneficiaryName", title);
+        }
+        done.setData(data);
+        return done;
+    }
+
     public DfsPortalTxnResponse ftInitiate(AccountPrincipal principal, LiveFtInitiateRequest req) {
         Party party = requireActiveParty(principal);
         String mobile = requireMobile(principal, party);
@@ -430,5 +493,21 @@ public class LiveTransferService {
 
     private static String trim(String s) {
         return s == null || s.isBlank() ? null : s.trim();
+    }
+
+    private static String titleOf(DfsPortalTxnResponse response) {
+        JsonNode data = response.getData();
+        if (data == null || !data.isObject()) {
+            return null;
+        }
+        for (String key : new String[]{"accountTitle", "beneficiaryTitle", "title", "name"}) {
+            if (data.has(key) && !data.get(key).isNull()) {
+                String value = data.get(key).asText("").trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+        return null;
     }
 }

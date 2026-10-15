@@ -9,7 +9,6 @@ import com.dfs.corporate.web.dto.*;
 import com.dfs.corporate.web.error.ApiException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -234,7 +233,7 @@ public class BranchOpsService {
         init.setAccountType("W");
         DfsPortalTxnResponse started = liveTransferService.ftInitiate(principal, init);
         if (!"000".equals(started.getResponsecode())) {
-            return cashView(started, wallet.getDfsMobile(), depositorName);
+            return cashView(started, wallet.getDfsMobile(), depositorName, "CASH_IN", null);
         }
         String beneficiary = firstText(depositorName, titleOf(started));
         LiveFtConfirmRequest conf = new LiveFtConfirmRequest();
@@ -246,7 +245,7 @@ public class BranchOpsService {
         conf.setBeneficiaryName(beneficiary);
         DfsPortalTxnResponse done = liveTransferService.ftConfirm(principal, conf);
         done.setProduct("CASH_IN");
-        return cashView(done, wallet.getDfsMobile(), beneficiary);
+        return cashView(done, wallet.getDfsMobile(), beneficiary, "CASH_IN", null);
     }
 
     public Map<String, Object> cashOutOtp(AccountPrincipal principal, String mobileNumber) {
@@ -265,31 +264,12 @@ public class BranchOpsService {
     }
 
     public Map<String, Object> cashOut(AccountPrincipal principal, String accountNo, String amount,
-                                       String narration, String otpId, String otpPin) {
-        Account agent = requireWallet(principal);
+                                       String narration, String cnic, String mpin) {
+        Account wallet = requireWallet(principal);
         String customer = requireAccount(accountNo);
-        if (otpId == null || otpId.isBlank() || otpPin == null || otpPin.isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Customer OTP is required for cash-out");
-        }
-        ObjectNode fund = objectMapper.createObjectNode();
-        fund.put("nidNo", agent.getDfsCnic());
-        fund.put("mobileNumber", agent.getDfsMobile());
-        fund.put("accountNo", customer);
-        fund.put("amount", money(amount));
-        fund.put("transPurposeId", cashClient.transPurposeId());
-        fund.put("narration", narration == null ? "" : narration.trim());
-        fund.put("bvs", "N");
-        ObjectNode otp = objectMapper.createObjectNode();
-        otp.put("otpId", otpId.trim());
-        otp.put("otpPin", otpPin.trim());
-        otp.put("otpType", "FT");
-        otp.put("userType", "C");
-        otp.put("mobileNumber", customer);
-        otp.put("email", "");
-        Map<String, Object> out = view(cashClient.internalCashOut(imei(agent), fund, otp));
-        out.put("fromAccountNo", customer);
-        out.put("product", "CASH_OUT");
-        return out;
+        DfsPortalTxnResponse done = liveTransferService.cashOutToBranch(
+                principal, customer, cnic, mpin, amount, narration);
+        return cashView(done, customer, null, "CASH_OUT", wallet.getDfsMobile());
     }
 
     private Account requireWallet(AccountPrincipal principal) {
@@ -349,18 +329,22 @@ public class BranchOpsService {
         }
     }
 
-    private Map<String, Object> cashView(DfsPortalTxnResponse response, String from, String beneficiary) {
+    private Map<String, Object> cashView(DfsPortalTxnResponse response, String from, String beneficiary,
+                                         String product, String toAccount) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("responsecode", response.getResponsecode() != null ? response.getResponsecode() : "");
         out.put("messages", response.getMessages() != null ? response.getMessages() : "");
         out.put("fromAccountNo", from);
-        out.put("product", "CASH_IN");
+        out.put("product", product);
         if (response.getPortalTxnRef() != null) {
             out.put("portalTxnRef", response.getPortalTxnRef());
         }
         Map<String, Object> data = new LinkedHashMap<>();
         if (response.getData() != null && response.getData().isObject()) {
             data.putAll(objectMapper.convertValue(response.getData(), Map.class));
+        }
+        if (toAccount != null && !toAccount.isBlank()) {
+            data.put("accountNo", toAccount.trim());
         }
         if (beneficiary != null && !beneficiary.isBlank()) {
             data.put("beneficiaryName", beneficiary.trim());
